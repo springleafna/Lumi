@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "baseUrl": ".",
+    "paths": {
+      "@lumi/shared": ["packages/shared/src"],
+      "@lumi/api-client": ["packages/api-client/src"],
+      "@lumi/parser": ["packages/parser/src"],
+      "@lumi/ai": ["packages/ai/src"],
+      "@lumi/storage": ["packages/storage/src"]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "lumi",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev:web": "pnpm --filter @lumi/web dev",
+    "dev:server": "pnpm --filter @lumi/server start:dev",
+    "dev:extension": "pnpm --filter @lumi/extension dev",
+    "build:web": "pnpm --filter @lumi/web build",
+    "build:server": "pnpm --filter @lumi/server build",
+    "build:extension": "pnpm --filter @lumi/extension build"
+  }
+}
