@@ -4,11 +4,18 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "dev:web": "pnpm --filter @lumi/web dev",
-    "dev:server": "pnpm --filter @lumi/server start:dev",
+    "build:packages": "pnpm --filter @lumi/shared build && pnpm --filter @lumi/parser build && pnpm --filter @lumi/api-client build",
+    "dev:web": "pnpm build:packages && pnpm --filter @lumi/web dev",
+    "dev:server": "pnpm db:generate && pnpm build:packages && pnpm --filter @lumi/server start:dev",
     "dev:extension": "pnpm --filter @lumi/extension dev",
-    "build:web": "pnpm --filter @lumi/web build",
-    "build:server": "pnpm --filter @lumi/server build",
-    "build:extension": "pnpm --filter @lumi/extension build"
+    "build:web": "pnpm build:packages && pnpm --filter @lumi/web build",
+    "build:server": "pnpm db:generate && pnpm build:packages && pnpm --filter @lumi/server build",
+    "build:extension": "pnpm --filter @lumi/extension build",
+    "db:generate": "pnpm --filter @lumi/server prisma generate",
+    "db:migrate": "pnpm --filter @lumi/server prisma migrate dev",
+    "db:init-user": "pnpm --filter @lumi/server db:init-user"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
   }
 }

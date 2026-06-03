@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents  Document[]
+  ingestJobs IngestJob[]
+}
+
+model Document {
+  id          String       @id @default(cuid())
+  type        DocumentType @default(article)
+  title       String
+  url         String?      @unique
+  source      String?
+  author      String?
+  excerpt     String?
+  coverImage  String?
+  markdown    String
+  contentText String?
+  wordCount   Int?
+  deletedAt   DateTime?
+  publishedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  userId     String
+  user       User        @relation(fields: [userId], references: [id])
+  ingestJobs IngestJob[]
+}
+
+model IngestJob {
+  id           String          @id @default(cuid())
+  type         IngestJobType   @default(url)
+  status       IngestJobStatus
+  inputUrl     String?
+  errorMessage String?
+  documentId   String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  startedAt    DateTime?
+  finishedAt   DateTime?
+
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  document   Document? @relation(fields: [documentId], references: [id])
+}
+
+enum DocumentType {
+  article
+  video
+  audio
+  pdf
+  fragment
+}
+
+enum IngestJobType {
+  url
+  html
+  selection
+  file
+}
+
+enum IngestJobStatus {
+  pending
+  processing
+  succeeded
+  failed
+}
