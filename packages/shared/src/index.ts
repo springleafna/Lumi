@@ -61,10 +61,18 @@ export type IngestUrlRequest = {
   url: string;
 };
 
+export type IngestHtmlRequest = {
+  url: string;
+  title?: string;
+  html: string;
+};
+
 export type IngestUrlResponse = {
   document: DocumentDetail;
   job: IngestJobDto;
 };
+
+export type IngestHtmlResponse = IngestUrlResponse;
 
 export type ListDocumentsParams = {
   keyword?: string;

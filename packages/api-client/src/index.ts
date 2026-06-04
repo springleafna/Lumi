@@ -3,6 +3,8 @@ import type {
   ApiResponse,
   DocumentDetail,
   DocumentSummary,
+  IngestHtmlRequest,
+  IngestHtmlResponse,
   IngestUrlRequest,
   IngestUrlResponse,
   ListDocumentsParams,
@@ -59,6 +61,8 @@ export function createLumiClient(options: LumiClientOptions) {
     ingest: {
       url: (payload: IngestUrlRequest) =>
         request<IngestUrlResponse>(http, 'post', '/ingest/url', payload),
+      html: (payload: IngestHtmlRequest) =>
+        request<IngestHtmlResponse>(http, 'post', '/ingest/html', payload),
     },
     documents: {
       list: (params: ListDocumentsParams = {}) =>

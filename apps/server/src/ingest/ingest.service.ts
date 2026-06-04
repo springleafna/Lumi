@@ -1,6 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import axios from 'axios';
-import type { IngestUrlRequest, IngestUrlResponse } from '@lumi/shared';
+import type {
+  IngestHtmlRequest,
+  IngestHtmlResponse,
+  IngestUrlRequest,
+  IngestUrlResponse,
+} from '@lumi/shared';
 import { parseArticleFromHtml } from '@lumi/parser';
 import { PrismaService } from '../prisma/prisma.service';
 import { toDocumentDetail, toIngestJobDto } from '../documents/document.mapper';
@@ -8,6 +13,7 @@ import { toDocumentDetail, toIngestJobDto } from '../documents/document.mapper';
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+const MAX_HTML_BYTES = 5 * 1024 * 1024;
 
 @Injectable()
 export class IngestService {
@@ -18,10 +24,41 @@ export class IngestService {
     input: IngestUrlRequest,
   ): Promise<IngestUrlResponse> {
     const url = normalizeUrl(input.url);
+    return this.ingestArticle({
+      userId,
+      url,
+      type: 'url',
+      getHtml: () => this.fetchHtml(url),
+    });
+  }
+
+  async ingestHtml(
+    userId: string,
+    input: IngestHtmlRequest,
+  ): Promise<IngestHtmlResponse> {
+    const url = normalizeUrl(input.url);
+
+    return this.ingestArticle({
+      userId,
+      url,
+      type: 'html',
+      fallbackTitle: input.title?.trim(),
+      getHtml: async () => validateHtml(input.html),
+    });
+  }
+
+  private async ingestArticle(input: {
+    userId: string;
+    url: string;
+    type: 'url' | 'html';
+    fallbackTitle?: string;
+    getHtml: () => Promise<string>;
+  }): Promise<IngestUrlResponse> {
     const job = await this.prisma.ingestJob.create({
       data: {
-        userId,
-        inputUrl: url,
+        userId: input.userId,
+        inputUrl: input.url,
+        type: input.type,
         status: 'pending',
       },
     });
@@ -33,7 +70,7 @@ export class IngestService {
       });
 
       const existing = await this.prisma.document.findFirst({
-        where: { userId, url },
+        where: { userId: input.userId, url: input.url },
       });
 
       if (existing && !existing.deletedAt) {
@@ -52,15 +89,15 @@ export class IngestService {
         };
       }
 
-      const html = await this.fetchHtml(url);
-      const parsed = await parseArticleFromHtml({ html, url });
+      const html = await input.getHtml();
+      const parsed = await parseArticleFromHtml({ html, url: input.url });
       if (!parsed.markdown) {
         throw new BadRequestException('未能提取到可保存的正文内容');
       }
 
       const documentData = {
-        title: parsed.title || url,
-        url,
+        title: parsed.title || input.fallbackTitle || input.url,
+        url: input.url,
         source: parsed.siteName,
         author: parsed.author,
         excerpt: parsed.excerpt,
@@ -80,7 +117,7 @@ export class IngestService {
         : await this.prisma.document.create({
             data: {
               ...documentData,
-              userId,
+              userId: input.userId,
               type: 'article',
             },
           });
@@ -131,6 +168,19 @@ export class IngestService {
 
     return response.data;
   }
+}
+
+function validateHtml(value: string): string {
+  const html = value?.trim();
+  if (!html) {
+    throw new BadRequestException('页面内容为空');
+  }
+
+  if (Buffer.byteLength(html, 'utf8') > MAX_HTML_BYTES) {
+    throw new BadRequestException('页面内容过大，暂不支持保存');
+  }
+
+  return html;
 }
 
 function normalizeUrl(value: string): string {
