@@ -8,12 +8,17 @@ export type ExtensionSettings = {
 };
 
 const DEFAULT_SETTINGS: ExtensionSettings = {
-  apiBaseUrl: 'http://localhost:3000/api',
+  apiBaseUrl: 'http://127.0.0.1:3000/api',
   webBaseUrl: 'http://localhost:5173',
 };
 
 export async function getSettings(): Promise<ExtensionSettings> {
-  const stored = await browser.storage.local.get(DEFAULT_SETTINGS);
+  const stored = await browser.storage.local.get([
+    'apiBaseUrl',
+    'webBaseUrl',
+    'accessToken',
+    'user',
+  ]);
   return {
     apiBaseUrl:
       typeof stored.apiBaseUrl === 'string'

@@ -5,7 +5,7 @@ import type { UserDto } from '@lumi/shared';
 import { createExtensionClient } from '../../utils/api';
 import { clearAuth, getSettings, saveSettings } from '../../utils/storage';
 
-const apiBaseUrl = ref('http://localhost:3000/api');
+const apiBaseUrl = ref('http://127.0.0.1:3000/api');
 const webBaseUrl = ref('http://localhost:5173');
 const username = ref('admin');
 const password = ref('');
@@ -109,7 +109,7 @@ function getErrorMessage(error: unknown, fallback: string) {
       <div class="form-stack">
         <label>
           <span>API 地址</span>
-          <input v-model.trim="apiBaseUrl" placeholder="http://localhost:3000/api" />
+          <input v-model.trim="apiBaseUrl" placeholder="http://127.0.0.1:3000/api" />
         </label>
         <label>
           <span>Web 地址</span>
