@@ -15,6 +15,7 @@ model User {
 
   documents  Document[]
   ingestJobs IngestJob[]
+  tags       Tag[]
 }
 
 model Document {
@@ -29,14 +30,42 @@ model Document {
   markdown    String
   contentText String?
   wordCount   Int?
+  archivedAt  DateTime?
   deletedAt   DateTime?
   publishedAt DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
   userId     String
-  user       User        @relation(fields: [userId], references: [id])
+  user       User          @relation(fields: [userId], references: [id])
   ingestJobs IngestJob[]
+  tags       DocumentTag[]
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+  documents DocumentTag[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model DocumentTag {
+  documentId String
+  tagId      String
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, tagId])
+  @@index([tagId])
 }
 
 model IngestJob {

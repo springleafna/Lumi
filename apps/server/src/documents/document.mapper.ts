@@ -1,7 +1,11 @@
-import type { Document, IngestJob } from '@prisma/client';
-import type { DocumentDetail, DocumentSummary, IngestJobDto } from '@lumi/shared';
+import type { Document, DocumentTag, IngestJob, Tag } from '@prisma/client';
+import type { DocumentDetail, DocumentSummary, IngestJobDto, TagDto } from '@lumi/shared';
 
-export function toDocumentSummary(document: Document): DocumentSummary {
+export type DocumentWithTags = Document & {
+  tags?: Array<DocumentTag & { tag: Tag }>;
+};
+
+export function toDocumentSummary(document: DocumentWithTags): DocumentSummary {
   return {
     id: document.id,
     type: document.type,
@@ -12,18 +16,25 @@ export function toDocumentSummary(document: Document): DocumentSummary {
     excerpt: document.excerpt,
     coverImage: document.coverImage,
     wordCount: document.wordCount,
+    archivedAt: toIso(document.archivedAt),
+    deletedAt: toIso(document.deletedAt),
     publishedAt: toIso(document.publishedAt),
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString(),
+    tags: toTagDtos(document.tags),
   };
 }
 
-export function toDocumentDetail(document: Document): DocumentDetail {
+export function toDocumentDetail(document: DocumentWithTags): DocumentDetail {
   return {
     ...toDocumentSummary(document),
     markdown: document.markdown,
     contentText: document.contentText,
   };
+}
+
+function toTagDtos(tags?: Array<DocumentTag & { tag: Tag }>): TagDto[] {
+  return tags?.map(({ tag }) => ({ id: tag.id, name: tag.name })) ?? [];
 }
 
 export function toIngestJobDto(job: IngestJob): IngestJobDto {

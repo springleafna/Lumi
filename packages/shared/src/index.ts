@@ -20,6 +20,19 @@ export type LoginResponse = {
 };
 
 export type DocumentType = 'article' | 'video' | 'audio' | 'pdf' | 'fragment';
+export type DocumentStatus = 'active' | 'archived' | 'trash';
+export type DocumentSort = 'created_desc' | 'created_asc' | 'updated_desc' | 'updated_asc';
+
+export type TagDto = {
+  id: string;
+  name: string;
+  count?: number;
+};
+
+export type SourceFacetDto = {
+  source: string;
+  count: number;
+};
 
 export type DocumentSummary = {
   id: string;
@@ -31,9 +44,12 @@ export type DocumentSummary = {
   excerpt?: string | null;
   coverImage?: string | null;
   wordCount?: number | null;
+  archivedAt?: string | null;
+  deletedAt?: string | null;
   publishedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+  tags: TagDto[];
 };
 
 export type DocumentDetail = DocumentSummary & {
@@ -76,6 +92,11 @@ export type IngestHtmlResponse = IngestUrlResponse;
 
 export type ListDocumentsParams = {
   keyword?: string;
+  status?: DocumentStatus;
+  type?: DocumentType;
+  tag?: string;
+  source?: string;
+  sort?: DocumentSort;
   page?: number;
   pageSize?: number;
 };
@@ -85,4 +106,13 @@ export type PageResult<T> = {
   page: number;
   pageSize: number;
   total: number;
+};
+
+export type DocumentFacets = {
+  tags: TagDto[];
+  sources: SourceFacetDto[];
+};
+
+export type AddDocumentTagRequest = {
+  name: string;
 };

@@ -1,7 +1,9 @@
 import axios, { type AxiosError, type AxiosInstance } from 'axios';
 import type {
+  AddDocumentTagRequest,
   ApiResponse,
   DocumentDetail,
+  DocumentFacets,
   DocumentSummary,
   IngestHtmlRequest,
   IngestHtmlResponse,
@@ -69,15 +71,28 @@ export function createLumiClient(options: LumiClientOptions) {
         request<PageResult<DocumentSummary>>(http, 'get', '/documents', undefined, {
           params,
         }),
+      facets: () => request<DocumentFacets>(http, 'get', '/documents/facets'),
       get: (id: string) => request<DocumentDetail>(http, 'get', `/documents/${id}`),
       delete: (id: string) => request<{ id: string }>(http, 'delete', `/documents/${id}`),
+      archive: (id: string) =>
+        request<DocumentDetail>(http, 'patch', `/documents/${id}/archive`),
+      unarchive: (id: string) =>
+        request<DocumentDetail>(http, 'patch', `/documents/${id}/unarchive`),
+      restore: (id: string) =>
+        request<DocumentDetail>(http, 'patch', `/documents/${id}/restore`),
+      permanentDelete: (id: string) =>
+        request<{ id: string }>(http, 'delete', `/documents/${id}/permanent`),
+      addTag: (id: string, payload: AddDocumentTagRequest) =>
+        request<DocumentDetail>(http, 'post', `/documents/${id}/tags`, payload),
+      removeTag: (id: string, tagId: string) =>
+        request<DocumentDetail>(http, 'delete', `/documents/${id}/tags/${tagId}`),
     },
   };
 }
 
 async function request<T>(
   http: AxiosInstance,
-  method: 'get' | 'post' | 'delete',
+  method: 'get' | 'post' | 'patch' | 'delete',
   url: string,
   data?: unknown,
   config?: Record<string, unknown>,
