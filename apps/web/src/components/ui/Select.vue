@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ChevronDown } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   modelValue: string
   options: Array<{
     value: string
@@ -15,25 +16,59 @@ const emit = defineEmits<{
   change: [value: string]
 }>()
 
-function onChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value
+const open = ref(false)
+const root = ref<HTMLElement | null>(null)
+
+const selectedLabel = computed(
+  () => props.options.find((option) => option.value === props.modelValue)?.label ?? '请选择',
+)
+
+function selectOption(value: string) {
   emit('update:modelValue', value)
   emit('change', value)
+  open.value = false
 }
+
+function onDocumentClick(event: MouseEvent) {
+  if (!root.value?.contains(event.target as Node)) {
+    open.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+})
 </script>
 
 <template>
-  <label class="ui-select">
-    <select
-      class="ui-select-native"
+  <div ref="root" class="ui-select">
+    <button
+      class="ui-select-trigger"
+      type="button"
       :aria-label="ariaLabel"
-      :value="modelValue"
-      @change="onChange"
+      :aria-expanded="open"
+      @click="open = !open"
     >
-      <option v-for="option in options" :key="option.value" :value="option.value">
+      <span>{{ selectedLabel }}</span>
+      <ChevronDown class="ui-select-icon" :size="15" />
+    </button>
+    <div v-if="open" class="ui-select-content" role="listbox">
+      <button
+        v-for="option in options"
+        :key="option.value"
+        class="ui-select-option"
+        :class="{ 'is-selected': option.value === modelValue }"
+        type="button"
+        role="option"
+        :aria-selected="option.value === modelValue"
+        @click="selectOption(option.value)"
+      >
         {{ option.label }}
-      </option>
-    </select>
-    <ChevronDown class="ui-select-icon" :size="15" />
-  </label>
+      </button>
+    </div>
+  </div>
 </template>

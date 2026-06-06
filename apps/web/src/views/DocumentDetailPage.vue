@@ -4,10 +4,12 @@ import {
   Archive,
   ArchiveRestore,
   ArrowLeft,
+  BookOpenText,
   CalendarDays,
   ExternalLink,
   Plus,
   RotateCcw,
+  Tag,
   Trash2,
   X,
 } from 'lucide-vue-next'
@@ -238,113 +240,32 @@ function getErrorMessage(error: unknown, fallback: string) {
 </script>
 
 <template>
-  <main class="reader-page">
-    <header class="reader-toolbar">
-      <UiButton variant="ghost" @click="router.push('/documents')">
-        <ArrowLeft :size="17" />
-        返回阅读库
-      </UiButton>
-
-      <div v-if="document" class="reader-toolbar-actions">
-        <a
-          v-if="document.url"
-          class="ui-button ui-button--outline ui-button--size-default"
-          :href="document.url"
-          rel="noreferrer"
-          target="_blank"
-        >
-          <ExternalLink :size="16" />
-          原文
-        </a>
-        <UiButton
-          v-if="!isTrash && !isArchived"
-          variant="outline"
-          :disabled="actionLoading"
-          @click="archiveDocument"
-        >
-          <Archive :size="16" />
-          归档
-        </UiButton>
-        <UiButton
-          v-if="!isTrash && isArchived"
-          variant="outline"
-          :disabled="actionLoading"
-          @click="unarchiveDocument"
-        >
-          <ArchiveRestore :size="16" />
-          取消归档
-        </UiButton>
-        <UiButton
-          v-if="isTrash"
-          variant="outline"
-          :disabled="actionLoading"
-          @click="restoreDocument"
-        >
-          <RotateCcw :size="16" />
-          恢复
-        </UiButton>
-        <UiButton
-          v-if="!isTrash"
-          variant="ghost"
-          :disabled="actionLoading"
-          @click="requestDeleteDocument"
-        >
-          <Trash2 :size="16" />
-          删除
-        </UiButton>
-        <UiButton
-          v-if="isTrash"
-          variant="destructive"
-          :disabled="actionLoading"
-          @click="requestPermanentlyDeleteDocument"
-        >
-          <Trash2 :size="16" />
-          永久删除
-        </UiButton>
-      </div>
-    </header>
-
-    <p v-if="errorMessage" class="inline-alert">{{ errorMessage }}</p>
-
-    <UiCard v-if="loading" class="reader-loading">
-      <span class="loading-line"></span>
-      <span class="loading-line short"></span>
-      <span class="loading-line soft"></span>
-    </UiCard>
-
-    <UiEmptyState
-      v-else-if="!document"
-      title="文章不可用"
-      description="这篇文章可能已被删除，或当前账号没有访问权限。"
-    />
-
-    <article v-else class="reader-document">
-      <header class="article-hero">
-        <div class="badge-row">
-          <UiBadge :variant="statusVariant">{{ statusLabel }}</UiBadge>
-          <UiBadge variant="outline">{{ documentTypeLabel(document.type) }}</UiBadge>
-        </div>
-        <h1>{{ document.title }}</h1>
-        <div class="reader-meta-line">
-          <CalendarDays :size="15" />
-          <span>创建 {{ formatDate(document.createdAt) }}</span>
-          <span v-if="document.updatedAt">更新 {{ formatDate(document.updatedAt) }}</span>
-        </div>
-        <div class="article-meta">
-          <span v-for="item in readingMeta" :key="String(item)">{{ item }}</span>
-        </div>
-      </header>
-
-      <UiCard class="reader-side-panel">
-        <div class="side-panel-head">
-          <div>
-            <p class="kicker">Tags</p>
-            <h2>标签</h2>
+  <main class="app-shell">
+    <aside class="sidebar">
+      <section class="sidebar-section">
+        <div class="sidebar-brand-link">
+          <div class="brand-mark">
+            <BookOpenText :size="18" />
           </div>
+          <span>Lumi</span>
         </div>
+      </section>
 
-        <div class="tag-strip">
+      <section class="sidebar-section">
+        <div class="sidebar-title">当前文章</div>
+        <nav class="sidebar-nav">
+          <button class="sidebar-link" type="button" @click="router.push('/documents')">
+            <ArrowLeft class="sidebar-link-icon" />
+            <span>返回文章库</span>
+          </button>
+        </nav>
+      </section>
+
+      <section v-if="document" class="sidebar-section">
+        <div class="sidebar-title">标签管理</div>
+        <div class="sidebar-tag-list">
           <UiBadge v-for="item in document.tags" :key="item.id" variant="neutral">
+            <Tag :size="12" />
             {{ item.name }}
             <button
               class="badge-delete"
@@ -356,19 +277,150 @@ function getErrorMessage(error: unknown, fallback: string) {
               <X :size="12" />
             </button>
           </UiBadge>
-          <span v-if="document.tags.length === 0" class="subtle-text">暂无标签</span>
+          <p v-if="document.tags.length === 0" class="sidebar-empty">暂无标签</p>
         </div>
-
         <form class="tag-form" @submit.prevent="addTag">
           <UiInput v-model="tagName" placeholder="添加标签" />
           <UiButton size="icon" variant="secondary" :disabled="actionLoading" type="submit">
-            <Plus :size="16" />
+            <Plus :size="15" />
           </UiButton>
         </form>
-      </UiCard>
+      </section>
 
-      <div class="markdown-reader" v-html="renderedMarkdown"></div>
-    </article>
+      <section v-if="document" class="sidebar-section">
+        <div class="sidebar-title">操作</div>
+        <nav class="sidebar-nav">
+          <a
+            v-if="document.url"
+            class="sidebar-link"
+            :href="document.url"
+            rel="noreferrer"
+            target="_blank"
+          >
+            <ExternalLink class="sidebar-link-icon" />
+            <span>打开原文</span>
+          </a>
+          <button
+            v-if="!isTrash && !isArchived"
+            class="sidebar-link"
+            :disabled="actionLoading"
+            type="button"
+            @click="archiveDocument"
+          >
+            <Archive class="sidebar-link-icon" />
+            <span>归档文章</span>
+          </button>
+          <button
+            v-if="!isTrash && isArchived"
+            class="sidebar-link"
+            :disabled="actionLoading"
+            type="button"
+            @click="unarchiveDocument"
+          >
+            <ArchiveRestore class="sidebar-link-icon" />
+            <span>取消归档</span>
+          </button>
+          <button
+            v-if="isTrash"
+            class="sidebar-link"
+            :disabled="actionLoading"
+            type="button"
+            @click="restoreDocument"
+          >
+            <RotateCcw class="sidebar-link-icon" />
+            <span>恢复文章</span>
+          </button>
+          <button
+            v-if="!isTrash"
+            class="sidebar-link sidebar-link-danger"
+            :disabled="actionLoading"
+            type="button"
+            @click="requestDeleteDocument"
+          >
+            <Trash2 class="sidebar-link-icon" />
+            <span>删除文章</span>
+          </button>
+          <button
+            v-if="isTrash"
+            class="sidebar-link sidebar-link-danger"
+            :disabled="actionLoading"
+            type="button"
+            @click="requestPermanentlyDeleteDocument"
+          >
+            <Trash2 class="sidebar-link-icon" />
+            <span>永久删除</span>
+          </button>
+        </nav>
+      </section>
+    </aside>
+
+    <div class="main">
+      <header class="header article-header">
+        <div class="header-spacer"></div>
+        <div v-if="document" class="header-actions">
+          <UiButton v-if="!isTrash && !isArchived" variant="secondary" @click="archiveDocument">
+            <Archive :size="15" />
+            归档
+          </UiButton>
+          <UiButton v-if="isTrash" variant="secondary" @click="restoreDocument">
+            <RotateCcw :size="15" />
+            恢复
+          </UiButton>
+          <a
+            v-if="document.url"
+            class="ui-button ui-button--ghost ui-button--size-icon"
+            :href="document.url"
+            rel="noreferrer"
+            target="_blank"
+            title="原文"
+          >
+            <ExternalLink :size="15" />
+          </a>
+        </div>
+      </header>
+
+      <main class="content">
+        <p v-if="errorMessage" class="inline-alert">{{ errorMessage }}</p>
+
+        <UiCard v-if="loading" class="article-detail loading-card">
+          <span class="loading-line"></span>
+          <span class="loading-line short"></span>
+          <span class="loading-line soft"></span>
+        </UiCard>
+
+        <UiEmptyState
+          v-else-if="!document"
+          title="文章不可用"
+          description="这篇文章可能已被删除，或当前账号没有访问权限。"
+        />
+
+        <article v-else class="article-detail">
+          <header class="article-detail-header">
+            <div class="article-detail-status">
+              <UiBadge :variant="statusVariant">{{ statusLabel }}</UiBadge>
+              <UiBadge variant="outline">{{ documentTypeLabel(document.type) }}</UiBadge>
+            </div>
+            <h1 class="article-detail-title">{{ document.title }}</h1>
+            <div class="article-detail-meta">
+              <span>{{ document.source || '未知来源' }}</span>
+              <span>
+                <CalendarDays :size="14" />
+                创建 {{ formatDate(document.createdAt) }}
+              </span>
+              <span v-if="document.updatedAt">更新 {{ formatDate(document.updatedAt) }}</span>
+              <span v-for="item in readingMeta" :key="String(item)">{{ item }}</span>
+            </div>
+            <div v-if="document.tags.length" class="article-detail-tags">
+              <UiBadge v-for="item in document.tags" :key="item.id" variant="neutral">
+                {{ item.name }}
+              </UiBadge>
+            </div>
+          </header>
+
+          <div class="article-detail-content markdown-reader" v-html="renderedMarkdown"></div>
+        </article>
+      </main>
+    </div>
 
     <UiDialog
       :open="Boolean(confirmDialog)"
