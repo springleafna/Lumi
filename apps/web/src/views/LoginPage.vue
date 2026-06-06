@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { LockKeyhole, LogIn } from 'lucide-vue-next'
+import { BookOpenText, LogIn } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
+import UiButton from '../components/ui/Button.vue'
+import UiCard from '../components/ui/Card.vue'
+import UiInput from '../components/ui/Input.vue'
 import { useAuth } from '../composables/useAuth'
+import { useToast } from '../composables/useToast'
 
 const route = useRoute()
 const router = useRouter()
 const { login } = useAuth()
+const { toast } = useToast()
 
 const username = ref('admin')
 const password = ref('admin123456')
@@ -19,11 +24,16 @@ async function submit() {
   loading.value = true
   try {
     await login(username.value, password.value)
+    toast({ title: '登录成功', description: '欢迎回到 Lumi。', variant: 'success' })
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/documents'
     await router.push(redirect)
   } catch (error) {
-    errorMessage.value =
-      error instanceof LumiApiError ? error.message : '登录失败，请稍后重试'
+    errorMessage.value = error instanceof LumiApiError ? error.message : '登录失败，请稍后重试'
+    toast({
+      title: '登录失败',
+      description: errorMessage.value,
+      variant: 'destructive',
+    })
   } finally {
     loading.value = false
   }
@@ -32,33 +42,39 @@ async function submit() {
 
 <template>
   <main class="auth-page">
-    <section class="auth-panel">
-      <div class="brand-lock">
-        <LockKeyhole :size="26" />
+    <UiCard class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-mark">
+          <BookOpenText :size="20" />
+        </div>
+        <div>
+          <p class="kicker">Lumi</p>
+          <h1>进入阅读库</h1>
+        </div>
       </div>
-      <h1>Lumi</h1>
-      <p>登录后导入、搜索和阅读你的图文知识库。</p>
 
-      <form class="form-stack" @submit.prevent="submit">
-        <label>
+      <p class="auth-copy">登录后继续导入、整理和阅读你的图文知识库。</p>
+
+      <form class="auth-form" @submit.prevent="submit">
+        <label class="field-group">
           <span>用户名</span>
-          <input v-model.trim="username" autocomplete="username" placeholder="admin" />
+          <UiInput v-model.trim="username" autocomplete="username" placeholder="admin" />
         </label>
-        <label>
+        <label class="field-group">
           <span>密码</span>
-          <input
+          <UiInput
             v-model="password"
             autocomplete="current-password"
             placeholder="admin123456"
             type="password"
           />
         </label>
-        <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
-        <button class="primary-button" :disabled="loading" type="submit">
-          <LogIn :size="18" />
+        <p v-if="errorMessage" class="inline-alert">{{ errorMessage }}</p>
+        <UiButton class="auth-submit" :disabled="loading" type="submit">
+          <LogIn :size="17" />
           {{ loading ? '登录中...' : '登录' }}
-        </button>
+        </UiButton>
       </form>
-    </section>
+    </UiCard>
   </main>
 </template>
