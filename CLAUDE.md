@@ -45,6 +45,16 @@ The repository is a pnpm monorepo. Prefer running scripts from the repository ro
   - manual tag add/remove on detail page
   - facets endpoint for tags and sources
   - Web reading and management UI refresh
+- MVP4:
+  - Redis + BullMQ async ingest and AI analysis queues
+  - standalone server worker entrypoint
+  - async URL/HTML ingest with placeholder documents
+  - automatic AI analysis after parsing succeeds
+  - OpenAI-compatible provider abstraction
+  - DeepSeek and SiliconFlow env-based configuration
+  - structured AI reading card and auto tags
+  - current-document AI Q&A with streaming response
+  - per-document AI conversation history
 
 ## Web UI Direction
 
@@ -80,7 +90,9 @@ pnpm db:generate
 pnpm db:migrate
 pnpm db:init-user
 pnpm dev:server
+pnpm dev:worker
 pnpm dev:web
+pnpm dev:all
 pnpm dev:extension
 pnpm build:server
 pnpm build:web
@@ -97,6 +109,8 @@ Build scripts:
 Development scripts:
 
 - `pnpm dev:server`
+- `pnpm dev:worker`
+- `pnpm dev:all`
 - `pnpm dev:web`
 - `pnpm dev:extension`
 
@@ -113,6 +127,7 @@ Database scripts:
 - Default server origin: `http://localhost:3000`
 - Default API base URL: `http://127.0.0.1:3000/api`
 - Default web origin: `http://localhost:5173`
+- Default Redis URL: `redis://localhost:6379`
 - Extension dev server runs on `http://127.0.0.1:5174`.
 - Extension settings are stored in `browser.storage.local`.
 - Extension defaults:
@@ -134,11 +149,41 @@ If the PostgreSQL password contains special characters such as `#`, URL-encode t
 - If the local database is not available, `db:migrate` and `db:init-user` fail by design.
 - Server disables Nest's default JSON parser and installs an Express JSON parser with a `6mb` limit for extension HTML ingest.
 - Business HTML ingest limit is `5MB`; larger payloads should return `页面内容过大，暂不支持保存`.
+- MVP4 ingest is asynchronous. API routes create placeholder documents and BullMQ jobs; Worker performs fetch/parse/update.
+- Worker entrypoint is `apps/server/src/worker.ts`.
+- Worker consumes `lumi-ingest` and `lumi-ai-analysis`.
+- Redis must be running before async ingest and AI analysis can work.
 - Documents are user-scoped.
+- `Document.ingestStatus` tracks placeholder/parse state.
 - Document timestamps:
   - `deletedAt`: soft delete/trash state
   - `archivedAt`: archive state
 - Tags are manual plain-text tags.
+- AI generated tags are written into the same manual tag system and remain user editable.
+
+## MVP4 AI API
+
+Current AI-related API surface includes:
+
+```txt
+POST   /api/documents/:id/retry-ingest
+GET    /api/documents/:id/ai-analysis
+POST   /api/documents/:id/ai-analysis/retry
+GET    /api/documents/:id/ai-conversations
+POST   /api/documents/:id/ai-conversations
+```
+
+AI env keys:
+
+```env
+AI_PROVIDER="deepseek"
+DEEPSEEK_API_KEY=""
+DEEPSEEK_BASE_URL="https://api.deepseek.com"
+DEEPSEEK_MODEL="deepseek-chat"
+SILICONFLOW_API_KEY=""
+SILICONFLOW_BASE_URL="https://api.siliconflow.cn/v1"
+SILICONFLOW_MODEL=""
+```
 
 ## MVP3 Document API
 

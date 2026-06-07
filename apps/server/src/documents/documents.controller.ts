@@ -18,12 +18,16 @@ import type {
 } from '@lumi/shared';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { IngestService } from '../ingest/ingest.service';
 import { DocumentsService } from './documents.service';
 
 @Controller('documents')
 @UseGuards(JwtAuthGuard)
 export class DocumentsController {
-  constructor(private readonly documentsService: DocumentsService) {}
+  constructor(
+    private readonly documentsService: DocumentsService,
+    private readonly ingestService: IngestService,
+  ) {}
 
   @Get()
   list(
@@ -81,6 +85,11 @@ export class DocumentsController {
     @Body() body: AddDocumentTagRequest,
   ) {
     return this.documentsService.addTag(user.id, id, body.name);
+  }
+
+  @Post(':id/retry-ingest')
+  retryIngest(@CurrentUser() user: UserDto, @Param('id') id: string) {
+    return this.ingestService.retryDocumentIngest(user.id, id);
   }
 
   @Delete(':id/tags/:tagId')

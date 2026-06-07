@@ -1,7 +1,10 @@
 import axios, { type AxiosError, type AxiosInstance } from 'axios';
 import type {
   AddDocumentTagRequest,
+  AiAnalysisDto,
+  AiConversationDto,
   ApiResponse,
+  CreateAiConversationRequest,
   DocumentDetail,
   DocumentFacets,
   DocumentSummary,
@@ -13,6 +16,8 @@ import type {
   LoginRequest,
   LoginResponse,
   PageResult,
+  RetryAiAnalysisResponse,
+  RetryIngestResponse,
   UserDto,
 } from '@lumi/shared';
 
@@ -86,6 +91,26 @@ export function createLumiClient(options: LumiClientOptions) {
         request<DocumentDetail>(http, 'post', `/documents/${id}/tags`, payload),
       removeTag: (id: string, tagId: string) =>
         request<DocumentDetail>(http, 'delete', `/documents/${id}/tags/${tagId}`),
+      retryIngest: (id: string) =>
+        request<RetryIngestResponse>(http, 'post', `/documents/${id}/retry-ingest`),
+      getAiAnalysis: (id: string) =>
+        request<AiAnalysisDto | null>(http, 'get', `/documents/${id}/ai-analysis`),
+      retryAiAnalysis: (id: string) =>
+        request<RetryAiAnalysisResponse>(http, 'post', `/documents/${id}/ai-analysis/retry`),
+      listAiConversations: (id: string) =>
+        request<AiConversationDto[]>(http, 'get', `/documents/${id}/ai-conversations`),
+      streamAiConversation: (
+        id: string,
+        payload: CreateAiConversationRequest,
+        onChunk: (chunk: string) => void,
+      ) =>
+        streamRequest(
+          options.baseUrl.replace(/\/$/, ''),
+          options.getToken?.(),
+          `/documents/${id}/ai-conversations`,
+          payload,
+          onChunk,
+        ),
     },
   };
 }
@@ -136,5 +161,40 @@ async function request<T>(
       message: axiosError.message || '请求失败',
       status: response?.status,
     });
+  }
+}
+
+async function streamRequest(
+  baseUrl: string,
+  token: string | null | undefined,
+  url: string,
+  data: unknown,
+  onChunk: (chunk: string) => void,
+): Promise<void> {
+  const response = await fetch(`${baseUrl}${url}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new LumiApiError({
+      code: response.status,
+      message: await response.text(),
+      status: response.status,
+    });
+  }
+
+  if (!response.body) return;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    onChunk(decoder.decode(value, { stream: true }));
   }
 }

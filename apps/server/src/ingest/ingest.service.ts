@@ -1,34 +1,33 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import axios from 'axios';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
   IngestHtmlRequest,
   IngestHtmlResponse,
   IngestUrlRequest,
   IngestUrlResponse,
+  RetryIngestResponse,
 } from '@lumi/shared';
-import { parseArticleFromHtml } from '@lumi/parser';
 import { PrismaService } from '../prisma/prisma.service';
+import { QueueService } from '../queue/queue.service';
 import { toDocumentDetail, toIngestJobDto } from '../documents/document.mapper';
 
-const USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-  '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
-const MAX_HTML_BYTES = 5 * 1024 * 1024;
+export const MAX_HTML_BYTES = 5 * 1024 * 1024;
 
 @Injectable()
 export class IngestService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly queueService: QueueService,
+  ) {}
 
   async ingestUrl(
     userId: string,
     input: IngestUrlRequest,
   ): Promise<IngestUrlResponse> {
     const url = normalizeUrl(input.url);
-    return this.ingestArticle({
+    return this.createQueuedIngest({
       userId,
       url,
       type: 'url',
-      getHtml: () => this.fetchHtml(url),
     });
   }
 
@@ -37,140 +36,159 @@ export class IngestService {
     input: IngestHtmlRequest,
   ): Promise<IngestHtmlResponse> {
     const url = normalizeUrl(input.url);
+    const html = validateHtml(input.html);
 
-    return this.ingestArticle({
+    return this.createQueuedIngest({
       userId,
       url,
       type: 'html',
-      fallbackTitle: input.title?.trim(),
-      getHtml: async () => validateHtml(input.html),
+      title: input.title?.trim(),
+      html,
     });
   }
 
-  private async ingestArticle(input: {
-    userId: string;
-    url: string;
-    type: 'url' | 'html';
-    fallbackTitle?: string;
-    getHtml: () => Promise<string>;
-  }): Promise<IngestUrlResponse> {
+  async retryDocumentIngest(
+    userId: string,
+    documentId: string,
+  ): Promise<RetryIngestResponse> {
+    const document = await this.prisma.document.findFirst({
+      where: {
+        id: documentId,
+        userId,
+        ingestStatus: 'failed',
+      },
+    });
+    if (!document) {
+      throw new NotFoundException('文章不存在或当前状态不支持重试');
+    }
+    if (!document.url) {
+      throw new BadRequestException('缺少原始 URL，无法重新解析');
+    }
+
+    const latestFailedJob = await this.prisma.ingestJob.findFirst({
+      where: {
+        userId,
+        documentId,
+        status: 'failed',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const canReuseHtml =
+      latestFailedJob?.type === 'html' && Boolean(latestFailedJob.inputHtml);
+    const jobType = canReuseHtml ? 'html' : 'url';
     const job = await this.prisma.ingestJob.create({
       data: {
-        userId: input.userId,
-        inputUrl: input.url,
-        type: input.type,
+        userId,
+        documentId,
+        inputUrl: document.url,
+        inputTitle: document.title,
+        inputHtml: canReuseHtml ? latestFailedJob.inputHtml : undefined,
+        type: jobType,
         status: 'pending',
       },
     });
 
-    try {
-      await this.prisma.ingestJob.update({
-        where: { id: job.id },
-        data: { status: 'processing', startedAt: new Date() },
-      });
+    const updatedDocument = await this.prisma.document.update({
+      where: { id: documentId },
+      data: {
+        ingestStatus: 'pending',
+        ingestErrorMessage: null,
+      },
+      include: documentIncludeForIngest,
+    });
 
-      const existing = await this.prisma.document.findFirst({
-        where: { userId: input.userId, url: input.url },
-      });
+    await this.queueService.addIngestJob(
+      jobType === 'html' ? 'ingest:html' : 'ingest:url',
+      { jobId: job.id },
+    );
 
-      if (existing && !existing.deletedAt) {
-        const finishedJob = await this.prisma.ingestJob.update({
-          where: { id: job.id },
-          data: {
-            status: 'succeeded',
-            documentId: existing.id,
-            finishedAt: new Date(),
-          },
-        });
+    return {
+      document: toDocumentDetail(updatedDocument),
+      job: toIngestJobDto(job),
+    };
+  }
 
-        return {
-          document: toDocumentDetail(existing),
-          job: toIngestJobDto(finishedJob),
-        };
-      }
-
-      const html = await input.getHtml();
-      const parsed = await parseArticleFromHtml({ html, url: input.url });
-      if (!parsed.markdown) {
-        throw new BadRequestException('未能提取到可保存的正文内容');
-      }
-
-      const documentData = {
-        title: parsed.title || input.fallbackTitle || input.url,
+  private async createQueuedIngest(input: {
+    userId: string;
+    url: string;
+    type: 'url' | 'html';
+    title?: string;
+    html?: string;
+  }): Promise<IngestUrlResponse> {
+    const existing = await this.prisma.document.findFirst({
+      where: {
+        userId: input.userId,
         url: input.url,
-        source: parsed.siteName,
-        author: parsed.author,
-        excerpt: parsed.excerpt,
-        coverImage: parsed.coverImage,
-        markdown: parsed.markdown,
-        contentText: parsed.contentText,
-        wordCount: parsed.wordCount,
-        publishedAt: parseDate(parsed.publishedAt),
-        deletedAt: null,
-      };
+      },
+      include: documentIncludeForIngest,
+    });
 
-      const document = existing
-        ? await this.prisma.document.update({
-            where: { id: existing.id },
-            data: documentData,
-          })
-        : await this.prisma.document.create({
-            data: {
-              ...documentData,
-              userId: input.userId,
-              type: 'article',
-            },
-          });
-
-      const finishedJob = await this.prisma.ingestJob.update({
-        where: { id: job.id },
+    if (existing && !existing.deletedAt && existing.ingestStatus === 'succeeded') {
+      const job = await this.prisma.ingestJob.create({
         data: {
+          userId: input.userId,
+          inputUrl: input.url,
+          inputTitle: input.title,
+          type: input.type,
           status: 'succeeded',
-          documentId: document.id,
+          documentId: existing.id,
           finishedAt: new Date(),
         },
       });
 
       return {
-        document: toDocumentDetail(document),
-        job: toIngestJobDto(finishedJob),
+        document: toDocumentDetail(existing),
+        job: toIngestJobDto(job),
       };
-    } catch (error) {
-      const message = getErrorMessage(error);
-      await this.prisma.ingestJob.update({
-        where: { id: job.id },
-        data: {
-          status: 'failed',
-          errorMessage: message,
-          finishedAt: new Date(),
-        },
-      });
-
-      throw new BadRequestException(`导入失败：${message}`);
     }
-  }
 
-  private async fetchHtml(url: string): Promise<string> {
-    const response = await axios.get<string>(url, {
-      timeout: 15000,
-      responseType: 'text',
-      headers: {
-        'User-Agent': USER_AGENT,
-        Accept:
-          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    const document = existing
+      ? await this.prisma.document.update({
+          where: { id: existing.id },
+          data: {
+            title: input.title || existing.title || input.url,
+            deletedAt: null,
+            ingestStatus: 'pending',
+            ingestErrorMessage: null,
+          },
+          include: documentIncludeForIngest,
+        })
+      : await this.prisma.document.create({
+          data: {
+            userId: input.userId,
+            type: 'article',
+            title: input.title || input.url,
+            url: input.url,
+            markdown: '',
+            ingestStatus: 'pending',
+          },
+          include: documentIncludeForIngest,
+        });
+
+    const job = await this.prisma.ingestJob.create({
+      data: {
+        userId: input.userId,
+        inputUrl: input.url,
+        inputTitle: input.title,
+        inputHtml: input.html,
+        type: input.type,
+        status: 'pending',
+        documentId: document.id,
       },
-      transformResponse: [(data) => data],
     });
 
-    if (typeof response.data !== 'string' || !response.data.trim()) {
-      throw new BadRequestException('网页响应为空');
-    }
+    await this.queueService.addIngestJob(input.type === 'html' ? 'ingest:html' : 'ingest:url', {
+      jobId: job.id,
+    });
 
-    return response.data;
+    return {
+      document: toDocumentDetail(document),
+      job: toIngestJobDto(job),
+    };
   }
 }
 
-function validateHtml(value: string): string {
+export function validateHtml(value: string): string {
   const html = value?.trim();
   if (!html) {
     throw new BadRequestException('页面内容为空');
@@ -183,7 +201,7 @@ function validateHtml(value: string): string {
   return html;
 }
 
-function normalizeUrl(value: string): string {
+export function normalizeUrl(value: string): string {
   const raw = value?.trim();
   if (!raw) {
     throw new BadRequestException('请输入 URL');
@@ -203,13 +221,16 @@ function normalizeUrl(value: string): string {
   return url.toString();
 }
 
-function parseDate(value?: string): Date | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return '未知错误';
-}
+export const documentIncludeForIngest = {
+  tags: {
+    include: {
+      tag: true,
+    },
+    orderBy: {
+      tag: {
+        name: 'asc' as const,
+      },
+    },
+  },
+  aiAnalysis: true,
+};

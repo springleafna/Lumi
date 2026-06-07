@@ -6,3 +6,4 @@ dist
 .DS_Store
 *.log
 pnpm-lock.yaml.tmp
+apps/server/src/generated/prisma

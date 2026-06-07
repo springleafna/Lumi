@@ -21,16 +21,28 @@ Lumi 是一个自用的个人知识管理系统，用于收集、转换、保存
 - 插件 Popup 保存当前完整页面 HTML
 - 后端新增 HTML 导入接口 `POST /api/ingest/html`
 - 保存成功后可从插件打开 Web 文章详情页
+- MVP3：
+- 文章状态筛选、搜索、标签、来源和排序
+- 归档、回收站、恢复和永久删除
+- 文章详情页阅读体验和 Web UI 风格优化
+- MVP4：
+- Redis + BullMQ 异步导入和 AI 分析任务
+- 独立 Worker 处理文章解析和 AI 分析
+- DeepSeek / 硅基流动 OpenAI-Compatible Provider 配置
+- 导入后显示解析中占位文章
+- 解析完成后自动生成结构化 AI 摘要和标签
+- 文章详情页 AI 抽屉和当前文章问答
 
 ## 当前不支持
 
-选中内容导入、CLI 导入、插件保存历史、Redis、BullMQ、Docker Compose、pgvector、AI 总结/问答、图片本地化、PDF/RSS/视频/音频解析和注册页暂不实现。
+选中内容导入、CLI 导入、插件保存历史、Docker Compose、pgvector、跨文章知识库问答、语义搜索、图片本地化、PDF/RSS/视频/音频解析和注册页暂不实现。
 
 ## 环境要求
 
 - Node.js >= 20
 - pnpm >= 9
 - PostgreSQL
+- Redis
 
 默认端口：
 
@@ -63,7 +75,12 @@ SERVER_PORT=3000
 WEB_ORIGIN="http://localhost:5173"
 ADMIN_USERNAME="admin"
 ADMIN_PASSWORD="admin123456"
+REDIS_URL="redis://localhost:6379"
 VITE_API_BASE_URL="http://localhost:3000/api"
+AI_PROVIDER="deepseek"
+DEEPSEEK_API_KEY=""
+DEEPSEEK_BASE_URL="https://api.deepseek.com"
+DEEPSEEK_MODEL="deepseek-chat"
 ```
 
 ## 启动流程
@@ -74,7 +91,14 @@ pnpm db:generate
 pnpm db:migrate
 pnpm db:init-user
 pnpm dev:server
+pnpm dev:worker
 pnpm dev:web
+```
+
+也可以使用统一开发脚本同时启动 Web、Server 和 Worker：
+
+```powershell
+pnpm dev:all
 ```
 
 浏览器插件开发：
@@ -102,6 +126,7 @@ pnpm build:server
 pnpm build:web
 pnpm build:extension
 pnpm dev:server
+pnpm dev:worker
 pnpm dev:web
 pnpm dev:extension
 pnpm db:generate
@@ -166,6 +191,11 @@ POST   /api/ingest/html
 GET    /api/documents
 GET    /api/documents/:id
 DELETE /api/documents/:id
+POST   /api/documents/:id/retry-ingest
+GET    /api/documents/:id/ai-analysis
+POST   /api/documents/:id/ai-analysis/retry
+GET    /api/documents/:id/ai-conversations
+POST   /api/documents/:id/ai-conversations
 ```
 
 HTML 导入请求体：
@@ -179,6 +209,8 @@ HTML 导入请求体：
 ```
 
 HTML 最大 5MB，超过会返回错误。
+
+MVP4 后导入接口会立即创建占位文章和导入任务，真正的网页抓取、正文解析和 AI 分析由 Worker 异步完成。
 
 ## Workspace
 

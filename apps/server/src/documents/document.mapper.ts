@@ -1,8 +1,25 @@
-import type { Document, DocumentTag, IngestJob, Tag } from '@prisma/client';
-import type { DocumentDetail, DocumentSummary, IngestJobDto, TagDto } from '@lumi/shared';
+import type {
+  AiAnalysis,
+  AiConversation,
+  Document,
+  DocumentTag,
+  IngestJob,
+  Prisma,
+  Tag,
+} from '../generated/prisma';
+import type {
+  AiAnalysisDto,
+  AiCitationDto,
+  AiConversationDto,
+  DocumentDetail,
+  DocumentSummary,
+  IngestJobDto,
+  TagDto,
+} from '@lumi/shared';
 
 export type DocumentWithTags = Document & {
   tags?: Array<DocumentTag & { tag: Tag }>;
+  aiAnalysis?: AiAnalysis | null;
 };
 
 export function toDocumentSummary(document: DocumentWithTags): DocumentSummary {
@@ -16,6 +33,9 @@ export function toDocumentSummary(document: DocumentWithTags): DocumentSummary {
     excerpt: document.excerpt,
     coverImage: document.coverImage,
     wordCount: document.wordCount,
+    ingestStatus: document.ingestStatus,
+    ingestErrorMessage: document.ingestErrorMessage,
+    aiAnalysisStatus: document.aiAnalysis?.status ?? null,
     archivedAt: toIso(document.archivedAt),
     deletedAt: toIso(document.deletedAt),
     publishedAt: toIso(document.publishedAt),
@@ -30,6 +50,7 @@ export function toDocumentDetail(document: DocumentWithTags): DocumentDetail {
     ...toDocumentSummary(document),
     markdown: document.markdown,
     contentText: document.contentText,
+    aiAnalysis: document.aiAnalysis ? toAiAnalysisDto(document.aiAnalysis) : null,
   };
 }
 
@@ -52,6 +73,73 @@ export function toIngestJobDto(job: IngestJob): IngestJobDto {
   };
 }
 
+export function toAiAnalysisDto(analysis: AiAnalysis): AiAnalysisDto {
+  return {
+    id: analysis.id,
+    status: analysis.status,
+    provider: analysis.provider,
+    model: analysis.model,
+    language: analysis.language,
+    oneSentenceSummary: analysis.oneSentenceSummary,
+    summary: analysis.summary,
+    keyPoints: toStringArray(analysis.keyPoints),
+    concepts: toStringArray(analysis.concepts),
+    actions: toStringArray(analysis.actions),
+    audience: analysis.audience,
+    suggestedTags: toStringArray(analysis.suggestedTags),
+    errorMessage: analysis.errorMessage,
+    startedAt: toIso(analysis.startedAt),
+    finishedAt: toIso(analysis.finishedAt),
+    createdAt: analysis.createdAt.toISOString(),
+    updatedAt: analysis.updatedAt.toISOString(),
+    documentId: analysis.documentId,
+  };
+}
+
+export function toAiConversationDto(conversation: AiConversation): AiConversationDto {
+  return {
+    id: conversation.id,
+    question: conversation.question,
+    answer: conversation.answer,
+    citations: toCitations(conversation.citations),
+    status: conversation.status,
+    provider: conversation.provider,
+    model: conversation.model,
+    errorMessage: conversation.errorMessage,
+    createdAt: conversation.createdAt.toISOString(),
+    updatedAt: conversation.updatedAt.toISOString(),
+    finishedAt: toIso(conversation.finishedAt),
+    documentId: conversation.documentId,
+  };
+}
+
 function toIso(value: Date | null): string | null {
   return value ? value.toISOString() : null;
+}
+
+function toStringArray(value: Prisma.JsonValue | null): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function toCitations(value: Prisma.JsonValue | null): AiCitationDto[] {
+  if (!Array.isArray(value)) return [];
+
+  const citations: AiCitationDto[] = [];
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const index = Number(record.index);
+    const text = typeof record.text === 'string' ? record.text : '';
+    const score = Number(record.score);
+    if (!Number.isFinite(index) || !text) continue;
+    citations.push({
+      index,
+      text,
+      score: Number.isFinite(score) ? score : undefined,
+    });
+  }
+  return citations;
 }

@@ -9,12 +9,13 @@ import {
   Layers3,
   LogOut,
   Plus,
+  RefreshCw,
   RotateCcw,
   Tag,
   Trash2,
   X,
 } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
 import type {
@@ -89,6 +90,7 @@ const importUrl = ref('')
 const importLoading = ref(false)
 const confirmDialog = ref<ConfirmDialogState | null>(null)
 const confirmLoading = ref(false)
+let pollingTimer: number | undefined
 
 const statusTabs = computed(() =>
   statusOptions.map((item) => ({
@@ -158,12 +160,33 @@ const emptyState = computed(() => {
   }
 })
 
+const shouldPollDocuments = computed(() =>
+  documents.value.some(
+    (document) =>
+      document.ingestStatus === 'pending' ||
+      document.ingestStatus === 'processing' ||
+      document.aiAnalysisStatus === 'pending' ||
+      document.aiAnalysisStatus === 'processing',
+  ),
+)
+
 onMounted(async () => {
   await Promise.all([loadDocuments(), loadFacets()])
+  pollingTimer = window.setInterval(() => {
+    if (shouldPollDocuments.value && !loading.value) {
+      void loadDocuments({ silent: true })
+    }
+  }, 4000)
 })
 
-async function loadDocuments() {
-  loading.value = true
+onBeforeUnmount(() => {
+  if (pollingTimer) window.clearInterval(pollingTimer)
+})
+
+async function loadDocuments(options: { silent?: boolean } = {}) {
+  if (!options.silent) {
+    loading.value = true
+  }
   errorMessage.value = ''
   try {
     const result = await client.documents.list({
@@ -181,7 +204,9 @@ async function loadDocuments() {
   } catch (error) {
     notifyError(error, '文章列表加载失败')
   } finally {
-    loading.value = false
+    if (!options.silent) {
+      loading.value = false
+    }
   }
 }
 
@@ -237,8 +262,8 @@ async function importDocument() {
     showImportDialog.value = false
     importUrl.value = ''
     toast({
-      title: '导入完成',
-      description: '文章已保存到 Lumi 阅读库。',
+      title: '导入任务已创建',
+      description: '文章会先进入解析队列，完成后自动生成 AI 摘要和标签。',
       variant: 'success',
     })
     await loadFacets()
@@ -248,6 +273,12 @@ async function importDocument() {
   } finally {
     importLoading.value = false
   }
+}
+
+async function retryIngest(document: DocumentSummary) {
+  await runDocumentAction(document.id, '已重新加入解析队列', async () => {
+    await client.documents.retryIngest(document.id)
+  })
 }
 
 async function archiveDocument(document: DocumentSummary) {
@@ -355,18 +386,35 @@ function documentTypeLabel(value: DocumentType) {
 }
 
 function documentStatusVariant(document: DocumentSummary) {
+  if (document.ingestStatus === 'failed') return 'destructive'
   if (document.deletedAt) return 'destructive'
   return 'neutral'
 }
 
 function documentStatusLabel(document: DocumentSummary) {
+  if (document.ingestStatus === 'pending') return '等待解析'
+  if (document.ingestStatus === 'processing') return '解析中'
+  if (document.ingestStatus === 'failed') return '解析失败'
   if (document.deletedAt) return '回收站'
   if (document.archivedAt) return '已归档'
   return ''
 }
 
 function shouldShowDocumentStatus(document: DocumentSummary) {
-  return Boolean(document.deletedAt || document.archivedAt)
+  return Boolean(document.deletedAt || document.archivedAt || document.ingestStatus !== 'succeeded')
+}
+
+function documentExcerpt(document: DocumentSummary) {
+  if (document.ingestStatus === 'pending') return '文章已进入导入队列，正在等待解析。'
+  if (document.ingestStatus === 'processing') return '正在提取正文并转换为 Markdown。'
+  if (document.ingestStatus === 'failed') {
+    return document.ingestErrorMessage || '解析失败，可以稍后重试。'
+  }
+  return document.excerpt || '暂无摘要'
+}
+
+function canManageDocument(document: DocumentSummary) {
+  return document.ingestStatus === 'succeeded'
 }
 
 function notifyError(error: unknown, fallback: string) {
@@ -553,7 +601,17 @@ function getErrorMessage(error: unknown, fallback: string) {
                     <Trash2 :size="15" />
                   </UiButton>
                   <UiButton
-                    v-if="status === 'archived'"
+                    v-if="document.ingestStatus === 'failed'"
+                    variant="ghost"
+                    size="icon"
+                    :disabled="actionLoadingId === document.id"
+                    title="重新解析"
+                    @click="retryIngest(document)"
+                  >
+                    <RefreshCw :size="15" />
+                  </UiButton>
+                  <UiButton
+                    v-if="status === 'archived' && canManageDocument(document)"
                     variant="ghost"
                     size="icon"
                     :disabled="actionLoadingId === document.id"
@@ -563,7 +621,7 @@ function getErrorMessage(error: unknown, fallback: string) {
                     <ArchiveRestore :size="15" />
                   </UiButton>
                   <UiButton
-                    v-if="status === 'active'"
+                    v-if="status === 'active' && canManageDocument(document)"
                     variant="ghost"
                     size="icon"
                     :disabled="actionLoadingId === document.id"
@@ -597,7 +655,7 @@ function getErrorMessage(error: unknown, fallback: string) {
               </div>
 
               <button class="article-card-body" type="button" @click="openDocument(document)">
-                <p class="article-card-excerpt">{{ document.excerpt || '暂无摘要' }}</p>
+                <p class="article-card-excerpt">{{ documentExcerpt(document) }}</p>
                 <div class="article-card-meta">
                   <span class="article-card-meta-item">{{ document.source || '未知来源' }}</span>
                   <span class="article-card-meta-item">{{ formatDate(document.createdAt) }}</span>
@@ -610,6 +668,15 @@ function getErrorMessage(error: unknown, fallback: string) {
                     {{ documentStatusLabel(document) }}
                   </UiBadge>
                   <UiBadge variant="outline">{{ documentTypeLabel(document.type) }}</UiBadge>
+                  <UiBadge
+                    v-if="document.aiAnalysisStatus === 'pending' || document.aiAnalysisStatus === 'processing'"
+                    variant="neutral"
+                  >
+                    AI 生成中
+                  </UiBadge>
+                  <UiBadge v-else-if="document.aiAnalysisStatus === 'succeeded'" variant="neutral">
+                    AI 已生成
+                  </UiBadge>
                   <UiBadge v-for="item in document.tags" :key="item.id" variant="neutral">
                     {{ item.name }}
                   </UiBadge>

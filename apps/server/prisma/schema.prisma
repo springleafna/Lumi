@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
@@ -13,33 +14,41 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  documents  Document[]
-  ingestJobs IngestJob[]
-  tags       Tag[]
+  documents       Document[]
+  ingestJobs      IngestJob[]
+  tags            Tag[]
+  aiAnalyses      AiAnalysis[]
+  aiConversations AiConversation[]
 }
 
 model Document {
-  id          String       @id @default(cuid())
-  type        DocumentType @default(article)
-  title       String
-  url         String?      @unique
-  source      String?
-  author      String?
-  excerpt     String?
-  coverImage  String?
-  markdown    String
-  contentText String?
-  wordCount   Int?
-  archivedAt  DateTime?
-  deletedAt   DateTime?
-  publishedAt DateTime?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id                 String               @id @default(cuid())
+  type               DocumentType         @default(article)
+  title              String
+  url                String?              @unique
+  source             String?
+  author             String?
+  excerpt            String?
+  coverImage         String?
+  markdown           String
+  contentText        String?
+  wordCount          Int?
+  ingestStatus       DocumentIngestStatus @default(succeeded)
+  ingestErrorMessage String?
+  archivedAt         DateTime?
+  deletedAt          DateTime?
+  publishedAt        DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
-  userId     String
-  user       User          @relation(fields: [userId], references: [id])
-  ingestJobs IngestJob[]
-  tags       DocumentTag[]
+  userId          String
+  user            User             @relation(fields: [userId], references: [id])
+  ingestJobs      IngestJob[]
+  tags            DocumentTag[]
+  aiAnalysis      AiAnalysis?
+  aiConversations AiConversation[]
+
+  @@index([userId, ingestStatus])
 }
 
 model Tag {
@@ -73,6 +82,8 @@ model IngestJob {
   type         IngestJobType   @default(url)
   status       IngestJobStatus
   inputUrl     String?
+  inputTitle   String?
+  inputHtml    String?
   errorMessage String?
   documentId   String?
   createdAt    DateTime        @default(now())
@@ -83,6 +94,56 @@ model IngestJob {
   userId     String
   user       User      @relation(fields: [userId], references: [id])
   document   Document? @relation(fields: [documentId], references: [id])
+}
+
+model AiAnalysis {
+  id                 String           @id @default(cuid())
+  status             AiAnalysisStatus @default(pending)
+  provider           String?
+  model              String?
+  language           String           @default("zh-CN")
+  oneSentenceSummary String?
+  summary            String?
+  keyPoints          Json?
+  concepts           Json?
+  actions            Json?
+  audience           String?
+  suggestedTags      Json?
+  errorMessage       String?
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  documentId String   @unique
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+}
+
+model AiConversation {
+  id           String               @id @default(cuid())
+  question     String
+  answer       String?
+  citations    Json?
+  status       AiConversationStatus @default(processing)
+  provider     String?
+  model        String?
+  errorMessage String?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  finishedAt   DateTime?
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([documentId, createdAt])
+  @@index([userId])
 }
 
 enum DocumentType {
@@ -102,6 +163,26 @@ enum IngestJobType {
 
 enum IngestJobStatus {
   pending
+  processing
+  succeeded
+  failed
+}
+
+enum DocumentIngestStatus {
+  pending
+  processing
+  succeeded
+  failed
+}
+
+enum AiAnalysisStatus {
+  pending
+  processing
+  succeeded
+  failed
+}
+
+enum AiConversationStatus {
   processing
   succeeded
   failed
