@@ -5,7 +5,6 @@ import {
   ArchiveRestore,
   ArrowLeft,
   Bot,
-  BookOpenText,
   CalendarDays,
   ExternalLink,
   LoaderCircle,
@@ -29,6 +28,7 @@ import UiDialog from '../components/ui/Dialog.vue'
 import UiEmptyState from '../components/ui/EmptyState.vue'
 import UiInput from '../components/ui/Input.vue'
 import { useToast } from '../composables/useToast'
+import lumiLogo from '../assets/lumi-logo.svg'
 import { client } from '../lib/client'
 
 type ConfirmDialogState = {
@@ -36,6 +36,12 @@ type ConfirmDialogState = {
   description: string
   actionLabel: string
   run: () => Promise<void>
+}
+
+type TocItem = {
+  id: string
+  title: string
+  level: number
 }
 
 const route = useRoute()
@@ -46,6 +52,23 @@ const markdown = new MarkdownIt({
   linkify: true,
   breaks: true,
 })
+const defaultHeadingOpen =
+  markdown.renderer.rules.heading_open ||
+  ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+
+markdown.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
+  const headingEnv = env as { headingIds?: string[]; headingIdIndex?: number }
+  const headingIds = headingEnv.headingIds || []
+  const headingIdIndex = headingEnv.headingIdIndex || 0
+  const id = headingIds[headingIdIndex]
+
+  if (id) {
+    tokens[idx].attrSet('id', id)
+  }
+
+  headingEnv.headingIdIndex = headingIdIndex + 1
+  return defaultHeadingOpen(tokens, idx, options, env, self)
+}
 
 const documentTypes: Array<{ value: DocumentType; label: string }> = [
   { value: 'article', label: '文章' },
@@ -70,9 +93,24 @@ const aiQuestion = ref('')
 const streamingConversationId = ref('')
 let pollingTimer: number | undefined
 
+const headingIndex = computed(() => {
+  if (!document.value || document.value.ingestStatus !== 'succeeded') {
+    return { all: [] as TocItem[], visible: [] as TocItem[] }
+  }
+
+  return buildHeadingIndex(document.value.markdown)
+})
+
+const tocItems = computed(() => headingIndex.value.visible)
+
 const renderedMarkdown = computed(() => {
   if (!document.value || document.value.ingestStatus !== 'succeeded') return ''
-  return DOMPurify.sanitize(markdown.render(document.value.markdown))
+  return DOMPurify.sanitize(
+    markdown.render(document.value.markdown, {
+      headingIds: headingIndex.value.all.map((item) => item.id),
+      headingIdIndex: 0,
+    }),
+  )
 })
 
 const isTrash = computed(() => Boolean(document.value?.deletedAt))
@@ -369,6 +407,60 @@ function aiList(items?: string[] | null) {
   return items?.filter(Boolean) || []
 }
 
+function buildHeadingIndex(source: string) {
+  const tokens = markdown.parse(source, {})
+  const counts = new Map<string, number>()
+  const all: TocItem[] = []
+  const visible: TocItem[] = []
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    if (token.type !== 'heading_open') continue
+
+    const level = Number(token.tag.replace('h', ''))
+    if (!Number.isInteger(level) || level < 1 || level > 6) continue
+
+    const title = tokens[index + 1]?.content.trim()
+    if (!title) continue
+
+    const item = {
+      id: createHeadingId(title, level, counts),
+      title,
+      level,
+    }
+
+    all.push(item)
+    if (level <= 3) {
+      visible.push(item)
+    }
+  }
+
+  return { all, visible }
+}
+
+function createHeadingId(title: string, level: number, counts: Map<string, number>) {
+  const normalized = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}\s_-]/gu, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+
+  const base = normalized || `heading-${level}`
+  const currentCount = counts.get(base) || 0
+  counts.set(base, currentCount + 1)
+
+  return currentCount === 0 ? base : `${base}-${currentCount + 1}`
+}
+
+function scrollToHeading(id: string) {
+  globalThis.document.getElementById(id)?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start',
+  })
+}
+
 function notifyError(error: unknown, fallback: string) {
   const message = getErrorMessage(error, fallback)
   errorMessage.value = message
@@ -390,7 +482,7 @@ function getErrorMessage(error: unknown, fallback: string) {
       <section class="sidebar-section">
         <div class="sidebar-brand-link">
           <div class="brand-mark">
-            <BookOpenText :size="18" />
+            <img class="brand-logo" :src="lumiLogo" alt="" />
           </div>
           <span>Lumi</span>
         </div>
@@ -543,60 +635,86 @@ function getErrorMessage(error: unknown, fallback: string) {
           description="这篇文章可能已被删除，或当前账号没有访问权限。"
         />
 
-        <article v-else class="article-detail">
-          <header class="article-detail-header">
-            <div class="article-detail-status">
-              <UiBadge :variant="statusVariant">{{ statusLabel }}</UiBadge>
-              <UiBadge variant="outline">{{ documentTypeLabel(document.type) }}</UiBadge>
-              <UiBadge v-if="document.aiAnalysisStatus" variant="neutral">
-                AI {{ aiStatusLabel }}
-              </UiBadge>
-            </div>
-            <h1 class="article-detail-title">{{ document.title }}</h1>
-            <div class="article-detail-meta">
-              <span>{{ document.source || '未知来源' }}</span>
-              <span>
-                <CalendarDays :size="14" />
-                创建 {{ formatDate(document.createdAt) }}
-              </span>
-              <span v-if="document.updatedAt">更新 {{ formatDate(document.updatedAt) }}</span>
-              <span v-for="item in readingMeta" :key="String(item)">{{ item }}</span>
-            </div>
-            <div v-if="document.tags.length" class="article-detail-tags">
-              <UiBadge v-for="item in document.tags" :key="item.id" variant="neutral">
-                {{ item.name }}
-              </UiBadge>
-            </div>
-          </header>
+        <div v-else class="article-reading-layout" :class="{ 'has-toc': tocItems.length }">
+          <article class="article-detail">
+            <header class="article-detail-header">
+              <div class="article-detail-status">
+                <UiBadge :variant="statusVariant">{{ statusLabel }}</UiBadge>
+                <UiBadge variant="outline">{{ documentTypeLabel(document.type) }}</UiBadge>
+                <UiBadge v-if="document.aiAnalysisStatus" variant="neutral">
+                  AI {{ aiStatusLabel }}
+                </UiBadge>
+              </div>
+              <h1 class="article-detail-title">{{ document.title }}</h1>
+              <div class="article-detail-meta">
+                <span>{{ document.source || '未知来源' }}</span>
+                <span>
+                  <CalendarDays :size="14" />
+                  创建 {{ formatDate(document.createdAt) }}
+                </span>
+                <span v-if="document.updatedAt">更新 {{ formatDate(document.updatedAt) }}</span>
+                <span v-for="item in readingMeta" :key="String(item)">{{ item }}</span>
+              </div>
+              <div v-if="document.tags.length" class="article-detail-tags">
+                <UiBadge v-for="item in document.tags" :key="item.id" variant="neutral">
+                  {{ item.name }}
+                </UiBadge>
+              </div>
+            </header>
 
-          <UiEmptyState
-            v-if="isIngestPending"
-            title="文章正在解析"
-            description="Lumi 正在提取正文并转换为 Markdown，完成后会自动生成 AI 阅读卡片。"
+            <UiEmptyState
+              v-if="isIngestPending"
+              title="文章正在解析"
+              description="Lumi 正在提取正文并转换为 Markdown，完成后会自动生成 AI 阅读卡片。"
+            >
+              <template #icon>
+                <LoaderCircle :size="28" />
+              </template>
+            </UiEmptyState>
+
+            <UiEmptyState
+              v-else-if="isIngestFailed"
+              title="文章解析失败"
+              :description="document.ingestErrorMessage || '页面正文提取失败，可以重新加入解析队列。'"
+            >
+              <template #icon>
+                <RefreshCw :size="28" />
+              </template>
+              <template #actions>
+                <UiButton :disabled="actionLoading" @click="retryIngest">
+                  <RefreshCw :size="15" />
+                  重新解析
+                </UiButton>
+              </template>
+            </UiEmptyState>
+
+            <div
+              v-else
+              class="article-detail-content markdown-reader"
+              v-html="renderedMarkdown"
+            ></div>
+          </article>
+
+          <aside
+            v-if="isIngestSucceeded && tocItems.length"
+            class="article-toc"
+            aria-label="文章目录"
           >
-            <template #icon>
-              <LoaderCircle :size="28" />
-            </template>
-          </UiEmptyState>
-
-          <UiEmptyState
-            v-else-if="isIngestFailed"
-            title="文章解析失败"
-            :description="document.ingestErrorMessage || '页面正文提取失败，可以重新加入解析队列。'"
-          >
-            <template #icon>
-              <RefreshCw :size="28" />
-            </template>
-            <template #actions>
-              <UiButton :disabled="actionLoading" @click="retryIngest">
-                <RefreshCw :size="15" />
-                重新解析
-              </UiButton>
-            </template>
-          </UiEmptyState>
-
-          <div v-else class="article-detail-content markdown-reader" v-html="renderedMarkdown"></div>
-        </article>
+            <p class="article-toc-title">目录</p>
+            <nav class="article-toc-nav">
+              <button
+                v-for="item in tocItems"
+                :key="item.id"
+                class="article-toc-link"
+                :class="`level-${item.level}`"
+                type="button"
+                @click="scrollToHeading(item.id)"
+              >
+                {{ item.title }}
+              </button>
+            </nav>
+          </aside>
+        </div>
       </main>
     </div>
 

@@ -2,7 +2,6 @@
 import {
   Archive,
   ArchiveRestore,
-  BookOpenText,
   ExternalLink,
   FileText,
   Globe2,
@@ -36,6 +35,7 @@ import UiSelect from '../components/ui/Select.vue'
 import UiTabs from '../components/ui/Tabs.vue'
 import { useAuth } from '../composables/useAuth'
 import { useToast } from '../composables/useToast'
+import lumiLogo from '../assets/lumi-logo.svg'
 import { client } from '../lib/client'
 
 type ConfirmDialogState = {
@@ -438,7 +438,7 @@ function getErrorMessage(error: unknown, fallback: string) {
       <section class="sidebar-section">
         <div class="sidebar-brand-link">
           <div class="brand-mark">
-            <BookOpenText :size="18" />
+            <img class="brand-logo" :src="lumiLogo" alt="" />
           </div>
           <span>Lumi</span>
         </div>

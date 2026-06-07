@@ -6,6 +6,7 @@ import { createExtensionClient } from '../../utils/api';
 import { capturePageHtml, capturePageUrl, type CapturedPageUrl } from '../../utils/capture';
 import { openDocument, openOptionsPage } from '../../utils/navigation';
 import { getSettings, type ExtensionSettings } from '../../utils/storage';
+import lumiLogo from '../../assets/lumi-logo.svg';
 
 const settings = ref<ExtensionSettings>();
 const currentPage = ref<CapturedPageUrl>();
@@ -94,20 +95,27 @@ function getErrorMessage(error: unknown, fallback: string) {
 <template>
   <main class="popup-shell">
     <header class="popup-header">
-      <div>
-        <p class="eyebrow">Lumi</p>
-        <h1>保存页面</h1>
+      <div class="brand-block">
+        <img class="brand-logo" :src="lumiLogo" alt="" />
+        <div>
+          <p class="eyebrow">Lumi</p>
+          <h1>保存页面</h1>
+        </div>
       </div>
-      <button class="text-button" type="button" @click="openOptionsPage">设置</button>
+      <button class="icon-button" title="设置" type="button" @click="openOptionsPage">设置</button>
     </header>
 
     <section class="status-card">
-      <p v-if="settings?.user">已登录：{{ settings.user.username }}</p>
-      <p v-else>未登录，请先进入设置页登录。</p>
+      <span class="status-dot" :class="{ muted: !isLoggedIn }"></span>
+      <div>
+        <strong>{{ isLoggedIn ? '已连接' : '未登录' }}</strong>
+        <p v-if="settings?.user">{{ settings.user.username }}</p>
+        <p v-else>请先进入设置页登录。</p>
+      </div>
     </section>
 
     <section class="page-card">
-      <span>当前页面</span>
+      <p class="section-label">当前页面</p>
       <h2>{{ currentPage?.title || '未读取到标题' }}</h2>
       <p>{{ currentPage?.url || '未读取到 URL' }}</p>
     </section>

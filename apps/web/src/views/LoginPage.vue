@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpenText, LogIn } from 'lucide-vue-next'
+import { LogIn } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
@@ -8,6 +8,7 @@ import UiCard from '../components/ui/Card.vue'
 import UiInput from '../components/ui/Input.vue'
 import { useAuth } from '../composables/useAuth'
 import { useToast } from '../composables/useToast'
+import lumiLogo from '../assets/lumi-logo.svg'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,7 +46,7 @@ async function submit() {
     <UiCard class="auth-card">
       <div class="auth-brand">
         <div class="brand-mark">
-          <BookOpenText :size="20" />
+          <img class="brand-logo" :src="lumiLogo" alt="" />
         </div>
         <div>
           <p class="kicker">Lumi</p>

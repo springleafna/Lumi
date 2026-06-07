@@ -4,6 +4,7 @@ import { LumiApiError } from '@lumi/api-client';
 import type { UserDto } from '@lumi/shared';
 import { createExtensionClient } from '../../utils/api';
 import { clearAuth, getSettings, saveSettings } from '../../utils/storage';
+import lumiLogo from '../../assets/lumi-logo.svg';
 
 const apiBaseUrl = ref('http://127.0.0.1:3000/api');
 const webBaseUrl = ref('http://localhost:5173');
@@ -98,15 +99,25 @@ function getErrorMessage(error: unknown, fallback: string) {
 <template>
   <main class="settings-page">
     <section class="panel">
-      <p class="eyebrow">Lumi Extension</p>
-      <h1>插件设置</h1>
-      <p>配置本地服务地址，并在插件中登录 Lumi。</p>
+      <header class="settings-header">
+        <div class="brand-block">
+          <img class="brand-logo" :src="lumiLogo" alt="" />
+          <div>
+            <p class="eyebrow">Lumi Extension</p>
+            <h1>插件设置</h1>
+          </div>
+        </div>
+        <div class="account-pill" :class="{ muted: !user }">
+          {{ user ? `已登录：${user.username}` : '未登录' }}
+        </div>
+      </header>
+      <p class="lead">配置本地服务地址，并在插件中登录 Lumi。</p>
 
       <div v-if="message" class="message" :class="messageType">
         {{ message }}
       </div>
 
-      <div class="form-stack">
+      <div class="form-card">
         <label>
           <span>API 地址</span>
           <input v-model.trim="apiBaseUrl" placeholder="http://127.0.0.1:3000/api" />
@@ -127,9 +138,10 @@ function getErrorMessage(error: unknown, fallback: string) {
       </div>
 
       <section class="section">
-        <h2>账号</h2>
-        <p v-if="user">当前登录：{{ user.username }}</p>
-        <p v-else>当前未登录。</p>
+        <div class="section-heading">
+          <h2>账号</h2>
+          <p>{{ user ? `当前登录：${user.username}` : '当前未登录。' }}</p>
+        </div>
 
         <form class="form-stack" @submit.prevent="login">
           <label>
