@@ -80,7 +80,8 @@ const tag = ref('')
 const source = ref('')
 const sort = ref<DocumentSort>('created_desc')
 const page = ref(1)
-const pageSize = 20
+const pageSize = 6
+const maxCardTagCount = 3
 const total = ref(0)
 const loading = ref(false)
 const actionLoadingId = ref('')
@@ -417,6 +418,14 @@ function canManageDocument(document: DocumentSummary) {
   return document.ingestStatus === 'succeeded'
 }
 
+function visibleDocumentTags(document: DocumentSummary) {
+  return document.tags.slice(0, maxCardTagCount)
+}
+
+function hasHiddenDocumentTags(document: DocumentSummary) {
+  return document.tags.length > maxCardTagCount
+}
+
 function notifyError(error: unknown, fallback: string) {
   const message = getErrorMessage(error, fallback)
   errorMessage.value = message
@@ -463,7 +472,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 
       <section class="sidebar-section">
         <div class="sidebar-title">标签</div>
-        <nav v-if="facets.tags.length" class="sidebar-nav">
+        <nav v-if="facets.tags.length" class="sidebar-nav sidebar-filter-list">
           <button
             v-for="item in facets.tags"
             :key="item.id"
@@ -482,7 +491,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 
       <section class="sidebar-section">
         <div class="sidebar-title">来源</div>
-        <nav v-if="facets.sources.length" class="sidebar-nav">
+        <nav v-if="facets.sources.length" class="sidebar-nav sidebar-filter-list">
           <button
             v-for="item in facets.sources"
             :key="item.source"
@@ -656,30 +665,55 @@ function getErrorMessage(error: unknown, fallback: string) {
 
               <button class="article-card-body" type="button" @click="openDocument(document)">
                 <p class="article-card-excerpt">{{ documentExcerpt(document) }}</p>
-                <div class="article-card-meta">
-                  <span class="article-card-meta-item">{{ document.source || '未知来源' }}</span>
-                  <span class="article-card-meta-item">{{ formatDate(document.createdAt) }}</span>
-                  <span v-if="document.wordCount" class="article-card-meta-item">
-                    {{ document.wordCount }} 字
-                  </span>
-                </div>
-                <div class="article-card-tags">
-                  <UiBadge v-if="shouldShowDocumentStatus(document)" :variant="documentStatusVariant(document)">
-                    {{ documentStatusLabel(document) }}
-                  </UiBadge>
-                  <UiBadge variant="outline">{{ documentTypeLabel(document.type) }}</UiBadge>
-                  <UiBadge
-                    v-if="document.aiAnalysisStatus === 'pending' || document.aiAnalysisStatus === 'processing'"
-                    variant="neutral"
-                  >
-                    AI 生成中
-                  </UiBadge>
-                  <UiBadge v-else-if="document.aiAnalysisStatus === 'succeeded'" variant="neutral">
-                    AI 已生成
-                  </UiBadge>
-                  <UiBadge v-for="item in document.tags" :key="item.id" variant="neutral">
-                    {{ item.name }}
-                  </UiBadge>
+                <div class="article-card-footer">
+                  <div class="article-card-meta">
+                    <span class="article-card-meta-item">{{ document.source || '未知来源' }}</span>
+                    <span class="article-card-meta-item">{{ formatDate(document.createdAt) }}</span>
+                    <span v-if="document.wordCount" class="article-card-meta-item">
+                      {{ document.wordCount }} 字
+                    </span>
+                  </div>
+                  <div class="article-card-tags">
+                    <UiBadge
+                      v-if="shouldShowDocumentStatus(document)"
+                      class="article-card-badge article-card-badge-state"
+                      :variant="documentStatusVariant(document)"
+                    >
+                      {{ documentStatusLabel(document) }}
+                    </UiBadge>
+                    <UiBadge class="article-card-badge article-card-badge-type" variant="strong">
+                      {{ documentTypeLabel(document.type) }}
+                    </UiBadge>
+                    <UiBadge
+                      v-if="document.aiAnalysisStatus === 'pending' || document.aiAnalysisStatus === 'processing'"
+                      class="article-card-badge article-card-badge-ai"
+                      variant="outline"
+                    >
+                      AI 生成中
+                    </UiBadge>
+                    <UiBadge
+                      v-else-if="document.aiAnalysisStatus === 'succeeded'"
+                      class="article-card-badge article-card-badge-ai"
+                      variant="outline"
+                    >
+                      AI 已生成
+                    </UiBadge>
+                    <UiBadge
+                      v-for="item in visibleDocumentTags(document)"
+                      :key="item.id"
+                      class="article-card-badge article-card-badge-tag"
+                      variant="neutral"
+                    >
+                      {{ item.name }}
+                    </UiBadge>
+                    <UiBadge
+                      v-if="hasHiddenDocumentTags(document)"
+                      class="article-card-badge article-card-badge-more"
+                      variant="neutral"
+                    >
+                      ...
+                    </UiBadge>
+                  </div>
                 </div>
               </button>
             </article>

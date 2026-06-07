@@ -92,11 +92,13 @@ export class DocumentsService {
     ]);
 
     return {
-      tags: tags.map((tag) => ({
-        id: tag.id,
-        name: tag.name,
-        count: tag._count.documents,
-      })),
+      tags: tags
+        .map((tag) => ({
+          id: tag.id,
+          name: tag.name,
+          count: tag._count.documents,
+        }))
+        .filter((tag) => tag.count > 0),
       sources: sources
         .filter((source) => source.source)
         .map((source) => ({
