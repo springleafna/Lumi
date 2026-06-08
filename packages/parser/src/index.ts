@@ -21,6 +21,12 @@ export type ParsedArticle = {
   wordCount?: number;
 };
 
+export type ParseFragmentInput = {
+  html?: string;
+  text?: string;
+  url: string;
+};
+
 export async function parseArticleFromHtml(
   input: ParseArticleInput,
 ): Promise<ParsedArticle> {
@@ -39,12 +45,7 @@ export async function parseArticleFromHtml(
     USE_PROFILES: { html: true },
   });
 
-  const turndown = new TurndownService({
-    headingStyle: 'atx',
-    codeBlockStyle: 'fenced',
-    bulletListMarker: '-',
-  });
-  turndown.use(turndownPluginGfm.gfm);
+  const turndown = createTurndownService();
 
   const markdown = turndown.turndown(cleanHtml).trim();
   const contentText = normalizeText(rawText);
@@ -67,6 +68,86 @@ export async function parseArticleFromHtml(
     contentText,
     wordCount: countWords(contentText),
   };
+}
+
+export async function parseFragmentToMarkdown(
+  input: ParseFragmentInput,
+): Promise<Pick<ParsedArticle, 'markdown' | 'contentText' | 'wordCount' | 'siteName'>> {
+  const rawHtml = input.html?.trim();
+  const rawText = input.text?.trim();
+
+  if (rawHtml) {
+    try {
+      const dom = new JSDOM(`<main>${rawHtml}</main>`, { url: input.url });
+      const purifier = createDOMPurify(dom.window);
+      const cleanHtml = purifier.sanitize(rawHtml, {
+        USE_PROFILES: { html: true },
+      });
+      const markdown = createTurndownService().turndown(cleanHtml).trim();
+      const contentText = normalizeText(
+        dom.window.document.body?.textContent || rawText || '',
+      );
+
+      if (markdown || contentText) {
+        return {
+          markdown: markdown || textToMarkdown(contentText),
+          contentText,
+          wordCount: countWords(contentText),
+          siteName: getSourceFromUrl(input.url),
+        };
+      }
+    } catch {
+      // Fall back to plain text below.
+    }
+  }
+
+  const contentText = normalizeText(rawText || stripHtml(rawHtml || ''));
+  return {
+    markdown: textToMarkdown(contentText),
+    contentText,
+    wordCount: countWords(contentText),
+    siteName: getSourceFromUrl(input.url),
+  };
+}
+
+export function parseMarkdownDocument(input: {
+  content: string;
+  filename: string;
+}): Pick<ParsedArticle, 'title' | 'markdown' | 'contentText' | 'wordCount'> {
+  const markdown = input.content.trim();
+  const title = extractMarkdownTitle(markdown) || filenameToTitle(input.filename);
+  const contentText = markdownToText(markdown);
+
+  return {
+    title,
+    markdown,
+    contentText,
+    wordCount: countWords(contentText),
+  };
+}
+
+export function parseTextDocument(input: {
+  content: string;
+  filename: string;
+}): Pick<ParsedArticle, 'title' | 'markdown' | 'contentText' | 'wordCount'> {
+  const contentText = normalizeText(input.content);
+
+  return {
+    title: filenameToTitle(input.filename),
+    markdown: textToMarkdown(input.content),
+    contentText,
+    wordCount: countWords(contentText),
+  };
+}
+
+function createTurndownService(): TurndownService {
+  const turndown = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+    bulletListMarker: '-',
+  });
+  turndown.use(turndownPluginGfm.gfm);
+  return turndown;
 }
 
 function getMeta(document: Document, name: string): string | undefined {
@@ -103,4 +184,33 @@ function countWords(text: string): number {
   const latinWords = normalized.match(/[A-Za-z0-9]+/g)?.length ?? 0;
   const cjkChars = normalized.match(/[\u3400-\u9fff]/g)?.length ?? 0;
   return latinWords + cjkChars;
+}
+
+function extractMarkdownTitle(markdown: string): string | undefined {
+  const match = markdown.match(/^#\s+(.+?)\s*$/m);
+  return match?.[1]?.trim() || undefined;
+}
+
+function filenameToTitle(filename: string): string {
+  const normalized = filename.trim().replace(/\.[^.]+$/, '');
+  return normalized || '未命名文档';
+}
+
+function markdownToText(markdown: string): string {
+  return normalizeText(
+    markdown
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/!\[[^\]]*]\([^)]*\)/g, ' ')
+      .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
+      .replace(/[#>*_~`|[\]-]+/g, ' '),
+  );
+}
+
+function textToMarkdown(text: string): string {
+  return text
+    .replace(/\r\n?/g, '\n')
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .join('\n\n');
 }

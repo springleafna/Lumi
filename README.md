@@ -32,10 +32,19 @@ Lumi 是一个自用的个人知识管理系统，用于收集、转换、保存
 - 导入后显示解析中占位文章
 - 解析完成后自动生成结构化 AI 摘要和标签
 - 文章详情页 AI 抽屉和当前文章问答
+- MVP5：
+- 阅读状态扩展为 `未读 / 已读` 两态，新文章默认未读
+- 打开文章详情页后自动将未读文章标记为已读
+- 收藏 / 取消收藏文章，收藏不影响归档和阅读状态
+- 文章列表支持未读、已读和收藏筛选
+- 文章详情页支持正文高亮与批注
+- Web 支持导入本地 `.md` / `.txt` 文档，本地导入来源显示为“本地”
+- 浏览器插件支持保存网页选中内容为片段
+- Markdown 阅读器支持 fenced code block 基础高亮
 
 ## 当前不支持
 
-选中内容导入、CLI 导入、插件保存历史、Docker Compose、pgvector、跨文章知识库问答、语义搜索、图片本地化、PDF/RSS/视频/音频解析和注册页暂不实现。
+CLI 导入、插件保存历史、Docker Compose、pgvector、跨文章知识库问答、语义搜索、图片本地化、PDF/RSS/视频/音频解析、批量文件导入、收藏页、批注汇总页、阅读统计页和注册页暂不实现。
 
 ## 环境要求
 
@@ -163,6 +172,7 @@ Web 地址：http://localhost:5173
 ```txt
 保存完整页面
 保存当前 URL
+保存选中内容
 ```
 
 保存成功后可以点击“打开文章”进入 Web 文章详情页。
@@ -188,14 +198,44 @@ POST   /api/auth/login
 GET    /api/auth/me
 POST   /api/ingest/url
 POST   /api/ingest/html
+POST   /api/ingest/file
+POST   /api/ingest/selection
 GET    /api/documents
+GET    /api/documents/facets
 GET    /api/documents/:id
 DELETE /api/documents/:id
+PATCH  /api/documents/:id/archive
+PATCH  /api/documents/:id/unarchive
+PATCH  /api/documents/:id/restore
+DELETE /api/documents/:id/permanent
+PATCH  /api/documents/:id/reading-status
+PATCH  /api/documents/:id/favorite
+POST   /api/documents/:id/tags
+DELETE /api/documents/:id/tags/:tagId
+GET    /api/documents/:id/annotations
+POST   /api/documents/:id/annotations
+PATCH  /api/documents/:id/annotations/:annotationId
+DELETE /api/documents/:id/annotations/:annotationId
 POST   /api/documents/:id/retry-ingest
 GET    /api/documents/:id/ai-analysis
 POST   /api/documents/:id/ai-analysis/retry
 GET    /api/documents/:id/ai-conversations
 POST   /api/documents/:id/ai-conversations
+```
+
+文章列表支持以下常用查询参数：
+
+```txt
+keyword
+status=active|archived|trash
+type=article|video|audio|pdf|fragment
+tag
+source
+readingStatus=unread|read
+favorite=true
+sort=created_desc|created_asc|updated_desc|updated_asc
+page
+pageSize
 ```
 
 HTML 导入请求体：
@@ -210,7 +250,22 @@ HTML 导入请求体：
 
 HTML 最大 5MB，超过会返回错误。
 
-MVP4 后导入接口会立即创建占位文章和导入任务，真正的网页抓取、正文解析和 AI 分析由 Worker 异步完成。
+文件导入使用 `multipart/form-data` 上传字段 `file`，仅支持 `.md` / `.txt`，单文件最大 2MB，来源写为“本地”。
+
+选中内容导入请求体：
+
+```json
+{
+  "url": "https://example.com/article",
+  "title": "页面标题",
+  "selectedHtml": "<p>选中内容</p>",
+  "selectedText": "选中内容"
+}
+```
+
+阅读状态只有两种取值：`unread` 和 `read`。新导入文档默认 `unread`，打开非回收站文章详情页后会自动标记为 `read`。收藏使用 `favoritedAt` 记录，和归档、阅读状态相互独立。
+
+MVP4 后 URL / HTML 导入接口会立即创建占位文章和导入任务，真正的网页抓取、正文解析和 AI 分析由 Worker 异步完成。MVP5 的文件导入和选中内容导入会立即创建完整文档或片段。
 
 ## Workspace
 

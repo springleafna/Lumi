@@ -1,16 +1,33 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
+  IngestFileResponse,
   IngestHtmlRequest,
   IngestHtmlResponse,
+  IngestSelectionRequest,
+  IngestSelectionResponse,
   IngestUrlRequest,
   IngestUrlResponse,
   RetryIngestResponse,
 } from '@lumi/shared';
+import {
+  parseFragmentToMarkdown,
+  parseMarkdownDocument,
+  parseTextDocument,
+} from '@lumi/parser';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
 import { toDocumentDetail, toIngestJobDto } from '../documents/document.mapper';
 
 export const MAX_HTML_BYTES = 5 * 1024 * 1024;
+export const MAX_FILE_BYTES = 2 * 1024 * 1024;
+export const MAX_SELECTION_BYTES = 200 * 1024;
+
+export type UploadedTextFile = {
+  originalname: string;
+  buffer: Buffer;
+  size: number;
+  mimetype?: string;
+};
 
 @Injectable()
 export class IngestService {
@@ -45,6 +62,136 @@ export class IngestService {
       title: input.title?.trim(),
       html,
     });
+  }
+
+  async ingestFile(userId: string, file?: UploadedTextFile): Promise<IngestFileResponse> {
+    const job = await this.prisma.ingestJob.create({
+      data: {
+        userId,
+        type: 'file',
+        status: 'processing',
+        inputTitle: file?.originalname,
+        startedAt: new Date(),
+      },
+    });
+
+    try {
+      const parsed = this.parseUploadedFile(file);
+      const document = await this.prisma.document.create({
+        data: {
+          userId,
+          type: 'article',
+          title: parsed.title,
+          source: '本地',
+          markdown: parsed.markdown,
+          contentText: parsed.contentText,
+          wordCount: parsed.wordCount,
+          ingestStatus: 'succeeded',
+        },
+        include: documentIncludeForIngest,
+      });
+
+      const updatedJob = await this.prisma.ingestJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'succeeded',
+          documentId: document.id,
+          finishedAt: new Date(),
+        },
+      });
+
+      await this.enqueueAiAnalysisBestEffort(userId, document.id);
+
+      return {
+        document: toDocumentDetail(document),
+        job: toIngestJobDto(updatedJob),
+      };
+    } catch (error) {
+      const message = getErrorMessage(error);
+      await this.prisma.ingestJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'failed',
+          errorMessage: message,
+          finishedAt: new Date(),
+        },
+      });
+      throw error;
+    }
+  }
+
+  async ingestSelection(
+    userId: string,
+    input: IngestSelectionRequest,
+  ): Promise<IngestSelectionResponse> {
+    const url = normalizeUrl(input.url);
+    const title = input.title?.trim() || url;
+    const selectedHtml = input.selectedHtml?.trim() || '';
+    const selectedText = input.selectedText?.trim() || '';
+    validateSelection(selectedHtml, selectedText);
+
+    const job = await this.prisma.ingestJob.create({
+      data: {
+        userId,
+        type: 'selection',
+        status: 'processing',
+        inputUrl: url,
+        inputTitle: title,
+        inputHtml: selectedHtml || selectedText,
+        startedAt: new Date(),
+      },
+    });
+
+    try {
+      const parsed = await parseFragmentToMarkdown({
+        url,
+        html: selectedHtml,
+        text: selectedText,
+      });
+      if (!parsed.markdown && !parsed.contentText) {
+        throw new BadRequestException('请先在页面中选中内容');
+      }
+
+      const document = await this.prisma.document.create({
+        data: {
+          userId,
+          type: 'fragment',
+          title: `摘录：${title}`,
+          url,
+          source: parsed.siteName || getSourceFromUrl(url),
+          markdown: parsed.markdown,
+          contentText: parsed.contentText,
+          wordCount: parsed.wordCount,
+          ingestStatus: 'succeeded',
+        },
+        include: documentIncludeForIngest,
+      });
+
+      const updatedJob = await this.prisma.ingestJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'succeeded',
+          documentId: document.id,
+          finishedAt: new Date(),
+        },
+      });
+
+      return {
+        document: toDocumentDetail(document),
+        job: toIngestJobDto(updatedJob),
+      };
+    } catch (error) {
+      const message = getErrorMessage(error);
+      await this.prisma.ingestJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'failed',
+          errorMessage: message,
+          finishedAt: new Date(),
+        },
+      });
+      throw error;
+    }
   }
 
   async retryDocumentIngest(
@@ -119,6 +266,7 @@ export class IngestService {
       where: {
         userId: input.userId,
         url: input.url,
+        type: 'article',
       },
       include: documentIncludeForIngest,
     });
@@ -186,6 +334,64 @@ export class IngestService {
       job: toIngestJobDto(job),
     };
   }
+
+  private parseUploadedFile(file?: UploadedTextFile) {
+    if (!file) {
+      throw new BadRequestException('请选择文件');
+    }
+    if (file.size > MAX_FILE_BYTES || file.buffer.byteLength > MAX_FILE_BYTES) {
+      throw new BadRequestException('文件内容过大，暂不支持保存');
+    }
+
+    const filename = file.originalname || '未命名文档';
+    const extension = filename.split('.').pop()?.toLowerCase();
+    if (extension !== 'md' && extension !== 'txt') {
+      throw new BadRequestException('仅支持 .md 和 .txt 文件');
+    }
+
+    const content = decodeUtf8(file.buffer);
+    if (!content.trim()) {
+      throw new BadRequestException('文件内容为空');
+    }
+
+    return extension === 'md'
+      ? parseMarkdownDocument({ filename, content })
+      : parseTextDocument({ filename, content });
+  }
+
+  private async enqueueAiAnalysisBestEffort(userId: string, documentId: string) {
+    try {
+      await this.prisma.aiAnalysis.upsert({
+        where: { documentId },
+        update: {
+          status: 'pending',
+          errorMessage: null,
+        },
+        create: {
+          userId,
+          documentId,
+          status: 'pending',
+        },
+      });
+      await this.queueService.addAiAnalysisJob({ userId, documentId });
+    } catch (error) {
+      await this.prisma.aiAnalysis.upsert({
+        where: { documentId },
+        update: {
+          status: 'failed',
+          errorMessage: getErrorMessage(error),
+          finishedAt: new Date(),
+        },
+        create: {
+          userId,
+          documentId,
+          status: 'failed',
+          errorMessage: getErrorMessage(error),
+          finishedAt: new Date(),
+        },
+      });
+    }
+  }
 }
 
 export function validateHtml(value: string): string {
@@ -219,6 +425,38 @@ export function normalizeUrl(value: string): string {
   }
 
   return url.toString();
+}
+
+function validateSelection(selectedHtml: string, selectedText: string) {
+  if (!selectedHtml && !selectedText) {
+    throw new BadRequestException('请先在页面中选中内容');
+  }
+
+  const size = Buffer.byteLength(selectedHtml || selectedText, 'utf8');
+  if (size > MAX_SELECTION_BYTES) {
+    throw new BadRequestException('选中内容过大，暂不支持保存');
+  }
+}
+
+function decodeUtf8(buffer: Buffer): string {
+  const content = buffer.toString('utf8');
+  if (content.includes('\uFFFD')) {
+    throw new BadRequestException('文件编码暂不支持');
+  }
+  return content.replace(/^\uFEFF/, '');
+}
+
+function getSourceFromUrl(url: string): string | undefined {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return undefined;
+  }
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return '未知错误';
 }
 
 export const documentIncludeForIngest = {

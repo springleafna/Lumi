@@ -1,6 +1,7 @@
 import type {
   AiAnalysis,
   AiConversation,
+  Annotation,
   Document,
   DocumentTag,
   IngestJob,
@@ -11,6 +12,7 @@ import type {
   AiAnalysisDto,
   AiCitationDto,
   AiConversationDto,
+  AnnotationDto,
   DocumentDetail,
   DocumentSummary,
   IngestJobDto,
@@ -35,6 +37,8 @@ export function toDocumentSummary(document: DocumentWithTags): DocumentSummary {
     wordCount: document.wordCount,
     ingestStatus: document.ingestStatus,
     ingestErrorMessage: document.ingestErrorMessage,
+    readingStatus: document.readingStatus,
+    favoritedAt: toIso(document.favoritedAt),
     aiAnalysisStatus: document.aiAnalysis?.status ?? null,
     archivedAt: toIso(document.archivedAt),
     deletedAt: toIso(document.deletedAt),
@@ -42,6 +46,22 @@ export function toDocumentSummary(document: DocumentWithTags): DocumentSummary {
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString(),
     tags: toTagDtos(document.tags),
+  };
+}
+
+export function toAnnotationDto(annotation: Annotation): AnnotationDto {
+  return {
+    id: annotation.id,
+    selectedText: annotation.selectedText,
+    note: annotation.note,
+    prefix: annotation.prefix,
+    suffix: annotation.suffix,
+    occurrenceIndex: annotation.occurrenceIndex,
+    startOffset: annotation.startOffset,
+    endOffset: annotation.endOffset,
+    createdAt: annotation.createdAt.toISOString(),
+    updatedAt: annotation.updatedAt.toISOString(),
+    documentId: annotation.documentId,
   };
 }
 

@@ -3,7 +3,12 @@ import { computed, onMounted, ref } from 'vue';
 import { LumiApiError } from '@lumi/api-client';
 import type { DocumentDetail } from '@lumi/shared';
 import { createExtensionClient } from '../../utils/api';
-import { capturePageHtml, capturePageUrl, type CapturedPageUrl } from '../../utils/capture';
+import {
+  capturePageHtml,
+  capturePageUrl,
+  captureSelection,
+  type CapturedPageUrl,
+} from '../../utils/capture';
 import { openDocument, openOptionsPage } from '../../utils/navigation';
 import { getSettings, type ExtensionSettings } from '../../utils/storage';
 import lumiLogo from '../../assets/lumi-logo.svg';
@@ -50,6 +55,19 @@ async function saveHtml() {
       url: page.url,
       title: page.title,
       html: page.html,
+    });
+  });
+}
+
+async function saveSelection() {
+  await runSave(async () => {
+    const selection = await captureSelection();
+    const client = await createExtensionClient(settings.value);
+    return client.ingest.selection({
+      url: selection.url,
+      title: selection.title,
+      selectedHtml: selection.selectedHtml,
+      selectedText: selection.selectedText,
     });
   });
 }
@@ -128,6 +146,9 @@ function getErrorMessage(error: unknown, fallback: string) {
       </button>
       <button class="secondary-button" :disabled="loading || !isLoggedIn || !currentPage" type="button" @click="saveUrl">
         保存当前 URL
+      </button>
+      <button class="secondary-button" :disabled="loading || !isLoggedIn || !currentPage" type="button" @click="saveSelection">
+        保存选中内容
       </button>
       <button
         v-if="savedDocument"

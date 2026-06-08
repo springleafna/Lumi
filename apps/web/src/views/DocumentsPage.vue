@@ -10,6 +10,7 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  Star,
   Tag,
   Trash2,
   X,
@@ -19,6 +20,7 @@ import { useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
 import type {
   DocumentFacets,
+  DocumentReadingStatus,
   DocumentSort,
   DocumentStatus,
   DocumentSummary,
@@ -78,6 +80,8 @@ const status = ref<DocumentStatus>('active')
 const type = ref<DocumentType | ''>('')
 const tag = ref('')
 const source = ref('')
+const readingStatus = ref<DocumentReadingStatus | ''>('')
+const favoriteOnly = ref(false)
 const sort = ref<DocumentSort>('created_desc')
 const page = ref(1)
 const pageSize = 6
@@ -87,7 +91,9 @@ const loading = ref(false)
 const actionLoadingId = ref('')
 const errorMessage = ref('')
 const showImportDialog = ref(false)
+const importMode = ref('url')
 const importUrl = ref('')
+const selectedFile = ref<File | null>(null)
 const importLoading = ref(false)
 const confirmDialog = ref<ConfirmDialogState | null>(null)
 const confirmLoading = ref(false)
@@ -100,6 +106,17 @@ const statusTabs = computed(() =>
   })),
 )
 
+const importTabs = [
+  { value: 'url', label: 'URL' },
+  { value: 'file', label: '文件' },
+]
+
+const readingStatusTabs = [
+  { value: '', label: '全部' },
+  { value: 'unread', label: '未读' },
+  { value: 'read', label: '已读' },
+]
+
 const selectedTagName = computed(
   () => facets.value.tags.find((item) => item.id === tag.value)?.name,
 )
@@ -109,7 +126,9 @@ const activeFilterCount = computed(
     Number(Boolean(keyword.value)) +
     Number(Boolean(type.value)) +
     Number(Boolean(tag.value)) +
-    Number(Boolean(source.value)),
+    Number(Boolean(source.value)) +
+    Number(Boolean(readingStatus.value)) +
+    Number(favoriteOnly.value),
 )
 
 const pageTitle = computed(() => {
@@ -122,6 +141,8 @@ const pageDescription = computed(() => {
   const parts = [`共 ${total.value} 篇`]
   if (selectedTagName.value) parts.push(`标签：${selectedTagName.value}`)
   if (source.value) parts.push(`来源：${source.value}`)
+  if (readingStatus.value) parts.push(readingStatusLabel(readingStatus.value))
+  if (favoriteOnly.value) parts.push('收藏')
   return parts.join(' · ')
 })
 
@@ -196,6 +217,8 @@ async function loadDocuments(options: { silent?: boolean } = {}) {
       type: type.value || undefined,
       tag: tag.value || undefined,
       source: source.value || undefined,
+      readingStatus: readingStatus.value || undefined,
+      favorite: favoriteOnly.value || undefined,
       sort: sort.value,
       page: page.value,
       pageSize,
@@ -229,6 +252,8 @@ async function clearFilters() {
   type.value = ''
   tag.value = ''
   source.value = ''
+  readingStatus.value = ''
+  favoriteOnly.value = false
   sort.value = 'created_desc'
   page.value = 1
   await loadDocuments()
@@ -255,6 +280,16 @@ async function changeSource(value: string) {
   await applyFilters()
 }
 
+async function changeReadingStatus(value: string) {
+  readingStatus.value = value as DocumentReadingStatus | ''
+  await applyFilters()
+}
+
+async function toggleFavoriteFilter() {
+  favoriteOnly.value = !favoriteOnly.value
+  await applyFilters()
+}
+
 async function importDocument() {
   importLoading.value = true
   errorMessage.value = ''
@@ -274,6 +309,52 @@ async function importDocument() {
   } finally {
     importLoading.value = false
   }
+}
+
+async function importFile() {
+  if (!selectedFile.value) {
+    toast({ title: '请选择文件', variant: 'destructive' })
+    return
+  }
+
+  importLoading.value = true
+  errorMessage.value = ''
+  try {
+    const formData = new FormData()
+    formData.append('file', selectedFile.value)
+    const result = await client.ingest.file(formData)
+    showImportDialog.value = false
+    selectedFile.value = null
+    toast({
+      title: '文件已导入',
+      description: '文档已保存，Lumi 会尝试自动生成 AI 阅读卡片。',
+      variant: 'success',
+    })
+    await loadFacets()
+    await router.push(`/documents/${result.document.id}`)
+  } catch (error) {
+    notifyError(error, '文件导入失败')
+  } finally {
+    importLoading.value = false
+  }
+}
+
+function selectFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  selectedFile.value = input.files?.[0] || null
+}
+
+async function toggleFavorite(document: DocumentSummary) {
+  if (!canEditReadingMarkers(document)) return
+  await runDocumentAction(
+    document.id,
+    document.favoritedAt ? '已取消收藏' : '已收藏',
+    async () => {
+      await client.documents.updateFavorite(document.id, {
+        favorite: !document.favoritedAt,
+      })
+    },
+  )
 }
 
 async function retryIngest(document: DocumentSummary) {
@@ -418,6 +499,18 @@ function canManageDocument(document: DocumentSummary) {
   return document.ingestStatus === 'succeeded'
 }
 
+function canEditReadingMarkers(document: DocumentSummary) {
+  return status.value !== 'trash' && document.ingestStatus === 'succeeded'
+}
+
+function readingStatusLabel(value: DocumentSummary['readingStatus']) {
+  return value === 'read' ? '已读' : '未读'
+}
+
+function readingStatusClass(value: DocumentSummary['readingStatus']) {
+  return value === 'unread' ? 'reading-status-badge is-unread' : 'reading-status-badge'
+}
+
 function visibleDocumentTags(document: DocumentSummary) {
   return document.tags.slice(0, maxCardTagCount)
 }
@@ -547,6 +640,23 @@ function getErrorMessage(error: unknown, fallback: string) {
             <UiSearchInput v-model="keyword" placeholder="搜索文章..." />
             <UiButton variant="secondary" type="submit">搜索</UiButton>
           </form>
+          <div class="article-list-filters">
+            <UiTabs
+              :model-value="readingStatus"
+              :items="readingStatusTabs"
+              @update:model-value="changeReadingStatus"
+            />
+            <UiButton
+              class="favorite-filter-button"
+              :class="{ 'is-active': favoriteOnly }"
+              variant="secondary"
+              :aria-pressed="favoriteOnly"
+              @click="toggleFavoriteFilter"
+            >
+              <Star :size="15" :class="{ 'is-filled-icon': favoriteOnly }" />
+              收藏
+            </UiButton>
+          </div>
         </section>
 
         <p v-if="errorMessage" class="inline-alert">{{ errorMessage }}</p>
@@ -589,6 +699,16 @@ function getErrorMessage(error: unknown, fallback: string) {
                   <h3 class="article-card-title">{{ document.title }}</h3>
                 </button>
                 <div class="article-card-actions">
+                  <UiButton
+                    v-if="canEditReadingMarkers(document)"
+                    variant="ghost"
+                    size="icon"
+                    :disabled="actionLoadingId === document.id"
+                    :title="document.favoritedAt ? '取消收藏' : '收藏'"
+                    @click.stop="toggleFavorite(document)"
+                  >
+                    <Star :size="15" :class="{ 'is-filled-icon': document.favoritedAt }" />
+                  </UiButton>
                   <UiButton
                     v-if="status === 'trash'"
                     variant="ghost"
@@ -675,6 +795,13 @@ function getErrorMessage(error: unknown, fallback: string) {
                   </div>
                   <div class="article-card-tags">
                     <UiBadge
+                      class="article-card-badge article-card-badge-state"
+                      :class="readingStatusClass(document.readingStatus)"
+                      variant="neutral"
+                    >
+                      {{ readingStatusLabel(document.readingStatus) }}
+                    </UiBadge>
+                    <UiBadge
                       v-if="shouldShowDocumentStatus(document)"
                       class="article-card-badge article-card-badge-state"
                       :variant="documentStatusVariant(document)"
@@ -733,24 +860,51 @@ function getErrorMessage(error: unknown, fallback: string) {
     <UiDialog
       v-model:open="showImportDialog"
       title="导入文章"
-      description="输入可直接访问的公开网页 URL。"
+      description="输入 URL，或上传 Markdown / 文本文档。"
     >
-      <form class="dialog-form" @submit.prevent="importDocument">
-        <label class="field-group">
-          <span>URL</span>
-          <UiInput
-            v-model.trim="importUrl"
-            autocomplete="url"
-            placeholder="https://example.com/article"
-          />
-        </label>
-        <div class="dialog-actions">
-          <UiButton variant="ghost" @click="showImportDialog = false">取消</UiButton>
-          <UiButton type="submit" :disabled="importLoading">
-            {{ importLoading ? '导入中...' : '确认导入' }}
-          </UiButton>
-        </div>
-      </form>
+      <div class="dialog-form">
+        <UiTabs
+          :model-value="importMode"
+          :items="importTabs"
+          @update:model-value="(value) => (importMode = value)"
+        />
+
+        <form v-if="importMode === 'url'" class="dialog-form" @submit.prevent="importDocument">
+          <label class="field-group">
+            <span>URL</span>
+            <UiInput
+              v-model.trim="importUrl"
+              autocomplete="url"
+              placeholder="https://example.com/article"
+            />
+          </label>
+          <div class="dialog-actions">
+            <UiButton variant="ghost" @click="showImportDialog = false">取消</UiButton>
+            <UiButton type="submit" :disabled="importLoading">
+              {{ importLoading ? '导入中...' : '确认导入' }}
+            </UiButton>
+          </div>
+        </form>
+
+        <form v-else class="dialog-form" @submit.prevent="importFile">
+          <label class="field-group">
+            <span>文件</span>
+            <input
+              class="ui-input"
+              type="file"
+              accept=".md,.txt,text/markdown,text/plain"
+              @change="selectFile"
+            />
+          </label>
+          <p class="field-hint">支持 .md / .txt，最大 2MB，按 UTF-8 读取。</p>
+          <div class="dialog-actions">
+            <UiButton variant="ghost" @click="showImportDialog = false">取消</UiButton>
+            <UiButton type="submit" :disabled="importLoading || !selectedFile">
+              {{ importLoading ? '导入中...' : '导入文件' }}
+            </UiButton>
+          </div>
+        </form>
+      </div>
     </UiDialog>
 
     <UiDialog

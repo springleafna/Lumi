@@ -1,15 +1,23 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma';
 import type {
+  AnnotationDto,
+  CreateAnnotationRequest,
   DocumentFacets,
+  DocumentReadingStatus,
   DocumentSort,
   DocumentStatus,
   DocumentSummary,
   ListDocumentsParams,
   PageResult,
+  UpdateAnnotationRequest,
 } from '@lumi/shared';
 import { PrismaService } from '../prisma/prisma.service';
-import { toDocumentDetail, toDocumentSummary } from './document.mapper';
+import {
+  toAnnotationDto,
+  toDocumentDetail,
+  toDocumentSummary,
+} from './document.mapper';
 
 const documentInclude = {
   tags: {
@@ -152,6 +160,100 @@ export class DocumentsService {
     return { id };
   }
 
+  async updateReadingStatus(
+    userId: string,
+    id: string,
+    readingStatus: DocumentReadingStatus,
+  ) {
+    if (!['unread', 'read'].includes(readingStatus)) {
+      throw new BadRequestException('阅读状态不正确');
+    }
+
+    await this.ensureOwnedDocument(userId, id, { deletedAt: null });
+    const document = await this.prisma.document.update({
+      where: { id },
+      data: { readingStatus },
+      include: documentInclude,
+    });
+    return toDocumentDetail(document);
+  }
+
+  async updateFavorite(userId: string, id: string, favorite: boolean) {
+    await this.ensureOwnedDocument(userId, id, { deletedAt: null });
+    const document = await this.prisma.document.update({
+      where: { id },
+      data: { favoritedAt: favorite ? new Date() : null },
+      include: documentInclude,
+    });
+    return toDocumentDetail(document);
+  }
+
+  async listAnnotations(userId: string, documentId: string): Promise<AnnotationDto[]> {
+    await this.ensureOwnedDocument(userId, documentId);
+    const annotations = await this.prisma.annotation.findMany({
+      where: { userId, documentId },
+      orderBy: [{ startOffset: 'asc' }, { createdAt: 'asc' }],
+    });
+    return annotations.map(toAnnotationDto);
+  }
+
+  async createAnnotation(
+    userId: string,
+    documentId: string,
+    input: CreateAnnotationRequest,
+  ): Promise<AnnotationDto> {
+    await this.ensureAnnotatableDocument(userId, documentId);
+    const data = this.normalizeAnnotationInput(input);
+
+    const overlap = await this.prisma.annotation.findFirst({
+      where: {
+        userId,
+        documentId,
+        startOffset: { lt: data.endOffset },
+        endOffset: { gt: data.startOffset },
+      },
+      select: { id: true },
+    });
+    if (overlap) {
+      throw new BadRequestException('该区域已有高亮');
+    }
+
+    const annotation = await this.prisma.annotation.create({
+      data: {
+        userId,
+        documentId,
+        ...data,
+      },
+    });
+    return toAnnotationDto(annotation);
+  }
+
+  async updateAnnotation(
+    userId: string,
+    documentId: string,
+    annotationId: string,
+    input: UpdateAnnotationRequest,
+  ): Promise<AnnotationDto> {
+    await this.ensureAnnotatableDocument(userId, documentId);
+    const note = this.normalizeAnnotationNote(input.note);
+    await this.ensureOwnedAnnotation(userId, documentId, annotationId);
+
+    const annotation = await this.prisma.annotation.update({
+      where: { id: annotationId },
+      data: { note },
+    });
+    return toAnnotationDto(annotation);
+  }
+
+  async deleteAnnotation(userId: string, documentId: string, annotationId: string) {
+    await this.ensureAnnotatableDocument(userId, documentId);
+    await this.ensureOwnedAnnotation(userId, documentId, annotationId);
+    await this.prisma.annotation.delete({
+      where: { id: annotationId },
+    });
+    return { id: annotationId };
+  }
+
   async permanentDelete(userId: string, id: string) {
     await this.ensureOwnedDocument(userId, id, { deletedAt: { not: null } });
     await this.prisma.document.delete({
@@ -231,6 +333,7 @@ export class DocumentsService {
   ): Prisma.DocumentWhereInput {
     const keyword = params.keyword?.trim();
     const status = this.normalizeStatus(params.status);
+    const readingStatus = this.normalizeReadingStatus(params.readingStatus);
 
     return {
       userId,
@@ -247,6 +350,8 @@ export class DocumentsService {
           }
         : {}),
       ...(params.source ? { source: params.source } : {}),
+      ...(readingStatus ? { readingStatus } : {}),
+      ...(params.favorite ? { favoritedAt: { not: null } } : {}),
       ...(keyword
         ? {
             OR: [
@@ -291,6 +396,13 @@ export class DocumentsService {
     return 'active';
   }
 
+  private normalizeReadingStatus(
+    readingStatus?: DocumentReadingStatus,
+  ): DocumentReadingStatus | undefined {
+    if (readingStatus === 'unread' || readingStatus === 'read') return readingStatus;
+    return undefined;
+  }
+
   private async findOwnedDocument(userId: string, id: string) {
     const document = await this.prisma.document.findFirst({
       where: { id, userId },
@@ -318,6 +430,75 @@ export class DocumentsService {
     if (!document) {
       throw new NotFoundException('文章不存在或状态不允许操作');
     }
+  }
+
+  private async ensureAnnotatableDocument(userId: string, id: string) {
+    const document = await this.prisma.document.findFirst({
+      where: {
+        id,
+        userId,
+        deletedAt: null,
+        ingestStatus: 'succeeded',
+      },
+      select: { id: true },
+    });
+    if (!document) {
+      throw new NotFoundException('文章不存在或状态不允许操作');
+    }
+  }
+
+  private async ensureOwnedAnnotation(
+    userId: string,
+    documentId: string,
+    annotationId: string,
+  ) {
+    const annotation = await this.prisma.annotation.findFirst({
+      where: { id: annotationId, userId, documentId },
+      select: { id: true },
+    });
+    if (!annotation) {
+      throw new NotFoundException('高亮不存在');
+    }
+  }
+
+  private normalizeAnnotationInput(input: CreateAnnotationRequest) {
+    const selectedText = input.selectedText?.trim();
+    if (!selectedText) {
+      throw new BadRequestException('请选择要高亮的正文');
+    }
+    if (selectedText.length > 2000) {
+      throw new BadRequestException('高亮内容过长，请缩短选择范围');
+    }
+
+    const note = this.normalizeAnnotationNote(input.note);
+    const startOffset = Number(input.startOffset);
+    const endOffset = Number(input.endOffset);
+    if (
+      !Number.isInteger(startOffset) ||
+      !Number.isInteger(endOffset) ||
+      startOffset < 0 ||
+      endOffset <= startOffset
+    ) {
+      throw new BadRequestException('高亮位置信息不正确');
+    }
+
+    return {
+      selectedText,
+      note,
+      prefix: input.prefix?.trim() || null,
+      suffix: input.suffix?.trim() || null,
+      occurrenceIndex: Math.max(0, Number(input.occurrenceIndex) || 0),
+      startOffset,
+      endOffset,
+    };
+  }
+
+  private normalizeAnnotationNote(value: string | null | undefined) {
+    const note = value?.trim() || null;
+    if (note && note.length > 1000) {
+      throw new BadRequestException('批注内容过长');
+    }
+    return note;
   }
 }
 

@@ -7,6 +7,11 @@ export type CapturedPageHtml = CapturedPageUrl & {
   html: string;
 };
 
+export type CapturedSelection = CapturedPageUrl & {
+  selectedHtml: string;
+  selectedText: string;
+};
+
 export async function capturePageUrl(): Promise<CapturedPageUrl> {
   const tab = await getActiveTab();
   return {
@@ -33,6 +38,44 @@ export async function capturePageHtml(): Promise<CapturedPageHtml> {
   const captured = result?.result;
   if (!captured?.url || !captured?.html) {
     throw new Error('无法读取当前页面内容');
+  }
+
+  return captured;
+}
+
+export async function captureSelection(): Promise<CapturedSelection> {
+  const tab = await getActiveTab();
+  if (!tab.id) {
+    throw new Error('无法读取当前标签页');
+  }
+
+  const [result] = await browser.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const selection = window.getSelection();
+      const selectedText = selection?.toString().trim() || '';
+      let selectedHtml = '';
+
+      if (selection && selection.rangeCount > 0 && selectedText) {
+        const container = document.createElement('div');
+        for (let index = 0; index < selection.rangeCount; index += 1) {
+          container.append(selection.getRangeAt(index).cloneContents());
+        }
+        selectedHtml = container.innerHTML;
+      }
+
+      return {
+        url: window.location.href,
+        title: document.title,
+        selectedHtml,
+        selectedText,
+      };
+    },
+  });
+
+  const captured = result?.result;
+  if (!captured?.url || !captured.selectedText) {
+    throw new Error('请先在页面中选中内容');
   }
 
   return captured;

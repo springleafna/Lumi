@@ -1,15 +1,20 @@
 import axios, { type AxiosError, type AxiosInstance } from 'axios';
 import type {
   AddDocumentTagRequest,
+  AnnotationDto,
   AiAnalysisDto,
   AiConversationDto,
   ApiResponse,
+  CreateAnnotationRequest,
   CreateAiConversationRequest,
   DocumentDetail,
   DocumentFacets,
   DocumentSummary,
+  IngestFileResponse,
   IngestHtmlRequest,
   IngestHtmlResponse,
+  IngestSelectionRequest,
+  IngestSelectionResponse,
   IngestUrlRequest,
   IngestUrlResponse,
   ListDocumentsParams,
@@ -18,6 +23,9 @@ import type {
   PageResult,
   RetryAiAnalysisResponse,
   RetryIngestResponse,
+  UpdateAnnotationRequest,
+  UpdateFavoriteRequest,
+  UpdateReadingStatusRequest,
   UserDto,
 } from '@lumi/shared';
 
@@ -70,6 +78,10 @@ export function createLumiClient(options: LumiClientOptions) {
         request<IngestUrlResponse>(http, 'post', '/ingest/url', payload),
       html: (payload: IngestHtmlRequest) =>
         request<IngestHtmlResponse>(http, 'post', '/ingest/html', payload),
+      file: (payload: FormData) =>
+        request<IngestFileResponse>(http, 'post', '/ingest/file', payload),
+      selection: (payload: IngestSelectionRequest) =>
+        request<IngestSelectionResponse>(http, 'post', '/ingest/selection', payload),
     },
     documents: {
       list: (params: ListDocumentsParams = {}) =>
@@ -87,10 +99,35 @@ export function createLumiClient(options: LumiClientOptions) {
         request<DocumentDetail>(http, 'patch', `/documents/${id}/restore`),
       permanentDelete: (id: string) =>
         request<{ id: string }>(http, 'delete', `/documents/${id}/permanent`),
+      updateReadingStatus: (id: string, payload: UpdateReadingStatusRequest) =>
+        request<DocumentDetail>(http, 'patch', `/documents/${id}/reading-status`, payload),
+      updateFavorite: (id: string, payload: UpdateFavoriteRequest) =>
+        request<DocumentDetail>(http, 'patch', `/documents/${id}/favorite`, payload),
       addTag: (id: string, payload: AddDocumentTagRequest) =>
         request<DocumentDetail>(http, 'post', `/documents/${id}/tags`, payload),
       removeTag: (id: string, tagId: string) =>
         request<DocumentDetail>(http, 'delete', `/documents/${id}/tags/${tagId}`),
+      listAnnotations: (id: string) =>
+        request<AnnotationDto[]>(http, 'get', `/documents/${id}/annotations`),
+      createAnnotation: (id: string, payload: CreateAnnotationRequest) =>
+        request<AnnotationDto>(http, 'post', `/documents/${id}/annotations`, payload),
+      updateAnnotation: (
+        id: string,
+        annotationId: string,
+        payload: UpdateAnnotationRequest,
+      ) =>
+        request<AnnotationDto>(
+          http,
+          'patch',
+          `/documents/${id}/annotations/${annotationId}`,
+          payload,
+        ),
+      deleteAnnotation: (id: string, annotationId: string) =>
+        request<{ id: string }>(
+          http,
+          'delete',
+          `/documents/${id}/annotations/${annotationId}`,
+        ),
       retryIngest: (id: string) =>
         request<RetryIngestResponse>(http, 'post', `/documents/${id}/retry-ingest`),
       getAiAnalysis: (id: string) =>

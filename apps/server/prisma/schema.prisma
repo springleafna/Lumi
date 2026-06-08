@@ -19,13 +19,14 @@ model User {
   tags            Tag[]
   aiAnalyses      AiAnalysis[]
   aiConversations AiConversation[]
+  annotations     Annotation[]
 }
 
 model Document {
   id                 String               @id @default(cuid())
   type               DocumentType         @default(article)
   title              String
-  url                String?              @unique
+  url                String?
   source             String?
   author             String?
   excerpt            String?
@@ -35,6 +36,8 @@ model Document {
   wordCount          Int?
   ingestStatus       DocumentIngestStatus @default(succeeded)
   ingestErrorMessage String?
+  readingStatus      DocumentReadingStatus @default(unread)
+  favoritedAt        DateTime?
   archivedAt         DateTime?
   deletedAt          DateTime?
   publishedAt        DateTime?
@@ -47,8 +50,10 @@ model Document {
   tags            DocumentTag[]
   aiAnalysis      AiAnalysis?
   aiConversations AiConversation[]
+  annotations     Annotation[]
 
   @@index([userId, ingestStatus])
+  @@index([userId, url])
 }
 
 model Tag {
@@ -146,6 +151,27 @@ model AiConversation {
   @@index([userId])
 }
 
+model Annotation {
+  id              String   @id @default(cuid())
+  selectedText    String
+  note            String?
+  prefix          String?
+  suffix          String?
+  occurrenceIndex Int      @default(0)
+  startOffset     Int
+  endOffset       Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([documentId, startOffset])
+  @@index([userId])
+}
+
 enum DocumentType {
   article
   video
@@ -173,6 +199,11 @@ enum DocumentIngestStatus {
   processing
   succeeded
   failed
+}
+
+enum DocumentReadingStatus {
+  unread
+  read
 }
 
 enum AiAnalysisStatus {

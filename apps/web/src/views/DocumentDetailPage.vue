@@ -7,26 +7,36 @@ import {
   Bot,
   CalendarDays,
   ExternalLink,
+  Highlighter,
   LoaderCircle,
   MessageSquare,
+  PencilLine,
   Plus,
   RefreshCw,
   RotateCcw,
+  Star,
   Tag,
   Trash2,
   X,
 } from 'lucide-vue-next'
 import MarkdownIt from 'markdown-it'
+import { createHighlighter, type Highlighter as ShikiHighlighter } from 'shiki/bundle/web'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
-import type { AiConversationDto, DocumentDetail, DocumentType } from '@lumi/shared'
+import type {
+  AiConversationDto,
+  AnnotationDto,
+  DocumentDetail,
+  DocumentType,
+} from '@lumi/shared'
 import UiBadge from '../components/ui/Badge.vue'
 import UiButton from '../components/ui/Button.vue'
 import UiCard from '../components/ui/Card.vue'
 import UiDialog from '../components/ui/Dialog.vue'
 import UiEmptyState from '../components/ui/EmptyState.vue'
 import UiInput from '../components/ui/Input.vue'
+import UiTabs from '../components/ui/Tabs.vue'
 import { useToast } from '../composables/useToast'
 import lumiLogo from '../assets/lumi-logo.svg'
 import { client } from '../lib/client'
@@ -44,6 +54,17 @@ type TocItem = {
   level: number
 }
 
+type DrawerTab = 'ai' | 'annotations'
+
+type SelectionDraft = {
+  selectedText: string
+  prefix: string
+  suffix: string
+  occurrenceIndex: number
+  startOffset: number
+  endOffset: number
+}
+
 const route = useRoute()
 const router = useRouter()
 const { toast } = useToast()
@@ -55,6 +76,11 @@ const markdown = new MarkdownIt({
 const defaultHeadingOpen =
   markdown.renderer.rules.heading_open ||
   ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+const defaultFence =
+  markdown.renderer.rules.fence ||
+  ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+
+const shikiHighlighter = ref<ShikiHighlighter | null>(null)
 
 markdown.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
   const headingEnv = env as { headingIds?: string[]; headingIdIndex?: number }
@@ -70,12 +96,34 @@ markdown.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
   return defaultHeadingOpen(tokens, idx, options, env, self)
 }
 
+markdown.renderer.rules.fence = (tokens, idx, options, env, self) => {
+  const highlighter = shikiHighlighter.value
+  const token = tokens[idx]
+  const lang = normalizeCodeLang(token.info)
+  if (highlighter) {
+    try {
+      return highlighter.codeToHtml(token.content, {
+        lang,
+        theme: 'github-light',
+      })
+    } catch {
+      // Fall back to markdown-it below.
+    }
+  }
+  return defaultFence(tokens, idx, options, env, self)
+}
+
 const documentTypes: Array<{ value: DocumentType; label: string }> = [
   { value: 'article', label: '文章' },
   { value: 'video', label: '视频' },
   { value: 'audio', label: '音频' },
   { value: 'pdf', label: 'PDF' },
   { value: 'fragment', label: '片段' },
+]
+
+const drawerTabs = [
+  { value: 'ai', label: 'AI' },
+  { value: 'annotations', label: '批注' },
 ]
 
 const document = ref<DocumentDetail | null>(null)
@@ -85,12 +133,22 @@ const tagName = ref('')
 const errorMessage = ref('')
 const confirmDialog = ref<ConfirmDialogState | null>(null)
 const confirmLoading = ref(false)
-const aiOpen = ref(false)
+const drawerOpen = ref(false)
+const drawerTab = ref<DrawerTab>('ai')
 const conversations = ref<AiConversationDto[]>([])
 const conversationsLoading = ref(false)
 const aiActionLoading = ref(false)
 const aiQuestion = ref('')
 const streamingConversationId = ref('')
+const annotations = ref<AnnotationDto[]>([])
+const annotationsLoading = ref(false)
+const annotationActionLoading = ref('')
+const articleContentRef = ref<HTMLElement | null>(null)
+const selectionDraft = ref<SelectionDraft | null>(null)
+const selectionToolbar = ref({ visible: false, x: 0, y: 0 })
+const annotationDialogOpen = ref(false)
+const annotationNote = ref('')
+const editingAnnotation = ref<AnnotationDto | null>(null)
 let pollingTimer: number | undefined
 
 const headingIndex = computed(() => {
@@ -104,14 +162,26 @@ const headingIndex = computed(() => {
 const tocItems = computed(() => headingIndex.value.visible)
 
 const renderedMarkdown = computed(() => {
-  if (!document.value || document.value.ingestStatus !== 'succeeded') return ''
-  return DOMPurify.sanitize(
-    markdown.render(document.value.markdown, {
+  const current = document.value
+  Boolean(shikiHighlighter.value)
+  if (!current || current.ingestStatus !== 'succeeded') return ''
+
+  const html = DOMPurify.sanitize(
+    markdown.render(current.markdown, {
       headingIds: headingIndex.value.all.map((item) => item.id),
       headingIdIndex: 0,
     }),
   )
+
+  return applyAnnotationHighlights(html, sortedAnnotations.value)
 })
+
+const sortedAnnotations = computed(() =>
+  [...annotations.value].sort((a, b) => {
+    if (a.startOffset !== b.startOffset) return a.startOffset - b.startOffset
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  }),
+)
 
 const isTrash = computed(() => Boolean(document.value?.deletedAt))
 const isArchived = computed(() => Boolean(document.value?.archivedAt) && !isTrash.value)
@@ -120,6 +190,8 @@ const isIngestPending = computed(
 )
 const isIngestFailed = computed(() => document.value?.ingestStatus === 'failed')
 const isIngestSucceeded = computed(() => document.value?.ingestStatus === 'succeeded')
+const canEditReadingMarkers = computed(() => Boolean(document.value && !isTrash.value))
+const canEditAnnotations = computed(() => Boolean(document.value && isIngestSucceeded.value && !isTrash.value))
 const aiAnalysis = computed(() => document.value?.aiAnalysis || null)
 const shouldPollDocument = computed(
   () =>
@@ -168,6 +240,7 @@ const aiStatusLabel = computed(() => {
 })
 
 onMounted(async () => {
+  initShiki()
   await loadDocument()
   pollingTimer = window.setInterval(() => {
     if (shouldPollDocument.value && !loading.value) {
@@ -180,14 +253,45 @@ onBeforeUnmount(() => {
   if (pollingTimer) window.clearInterval(pollingTimer)
 })
 
+async function initShiki() {
+  try {
+    shikiHighlighter.value = await createHighlighter({
+      themes: ['github-light'],
+      langs: [
+        'bash',
+        'css',
+        'html',
+        'java',
+        'javascript',
+        'json',
+        'markdown',
+        'python',
+        'shell',
+        'sql',
+        'tsx',
+        'typescript',
+        'vue',
+        'yaml',
+      ],
+    })
+  } catch {
+    shikiHighlighter.value = null
+  }
+}
+
 async function loadDocument(options: { silent?: boolean } = {}) {
   if (!options.silent) {
     loading.value = true
   }
   errorMessage.value = ''
   try {
-    document.value = await client.documents.get(String(route.params.id))
-    if (aiOpen.value && isIngestSucceeded.value) {
+    const loaded = await client.documents.get(String(route.params.id))
+    document.value = loaded
+    await markAsReadingIfNeeded(loaded)
+    if (document.value?.ingestStatus === 'succeeded') {
+      await loadAnnotations({ silent: true })
+    }
+    if (drawerOpen.value && drawerTab.value === 'ai' && isIngestSucceeded.value) {
       await loadConversations()
     }
   } catch (error) {
@@ -196,6 +300,24 @@ async function loadDocument(options: { silent?: boolean } = {}) {
     if (!options.silent) {
       loading.value = false
     }
+  }
+}
+
+async function markAsReadingIfNeeded(current: DocumentDetail) {
+  if (
+    current.ingestStatus !== 'succeeded' ||
+    current.deletedAt ||
+    current.readingStatus !== 'unread'
+  ) {
+    return
+  }
+
+  try {
+    document.value = await client.documents.updateReadingStatus(current.id, {
+      readingStatus: 'read',
+    })
+  } catch {
+    // Opening a document should not fail just because this soft state update failed.
   }
 }
 
@@ -221,6 +343,19 @@ async function restoreDocument() {
     document.value = await client.documents.restore(document.value!.id)
     toast({ title: '已恢复', variant: 'success' })
   }, '恢复失败')
+}
+
+async function toggleFavorite() {
+  if (!document.value || !canEditReadingMarkers.value) return
+  await runDetailAction(async () => {
+    document.value = await client.documents.updateFavorite(document.value!.id, {
+      favorite: !document.value!.favoritedAt,
+    })
+    toast({
+      title: document.value.favoritedAt ? '已收藏' : '已取消收藏',
+      variant: 'success',
+    })
+  }, '收藏状态更新失败')
 }
 
 function requestDeleteDocument() {
@@ -320,10 +455,14 @@ async function retryAiAnalysis() {
   }
 }
 
-async function toggleAiDrawer() {
-  aiOpen.value = !aiOpen.value
-  if (aiOpen.value && document.value && isIngestSucceeded.value) {
+async function openDrawer(tab: DrawerTab) {
+  drawerOpen.value = true
+  drawerTab.value = tab
+  if (tab === 'ai' && document.value && isIngestSucceeded.value) {
     await loadConversations()
+  }
+  if (tab === 'annotations' && document.value && isIngestSucceeded.value) {
+    await loadAnnotations()
   }
 }
 
@@ -377,6 +516,168 @@ async function askAi() {
   }
 }
 
+async function loadAnnotations(options: { silent?: boolean } = {}) {
+  if (!document.value || document.value.ingestStatus !== 'succeeded') return
+  if (!options.silent) annotationsLoading.value = true
+  try {
+    annotations.value = await client.documents.listAnnotations(document.value.id)
+  } catch (error) {
+    notifyError(error, '批注加载失败')
+  } finally {
+    if (!options.silent) annotationsLoading.value = false
+  }
+}
+
+function handleTextSelection() {
+  if (!canEditAnnotations.value || !articleContentRef.value) return
+
+  window.setTimeout(() => {
+    const selection = window.getSelection()
+    const text = selection?.toString().trim() || ''
+    if (!selection || selection.rangeCount === 0 || !text) {
+      selectionToolbar.value.visible = false
+      selectionDraft.value = null
+      return
+    }
+
+    const range = selection.getRangeAt(0)
+    if (
+      !articleContentRef.value?.contains(range.commonAncestorContainer) ||
+      text.length > 2000
+    ) {
+      selectionToolbar.value.visible = false
+      selectionDraft.value = null
+      if (text.length > 2000) {
+        toast({ title: '高亮内容过长，请缩短选择范围', variant: 'destructive' })
+      }
+      return
+    }
+
+    const offsets = getSelectionOffsets(articleContentRef.value, range)
+    if (!offsets || hasAnnotationOverlap(offsets.startOffset, offsets.endOffset)) {
+      selectionToolbar.value.visible = false
+      selectionDraft.value = null
+      if (offsets) toast({ title: '该区域已有高亮', variant: 'destructive' })
+      return
+    }
+
+    const plainText = articleContentRef.value.textContent || ''
+    const rect = range.getBoundingClientRect()
+    selectionDraft.value = {
+      selectedText: text,
+      prefix: plainText.slice(Math.max(0, offsets.startOffset - 80), offsets.startOffset),
+      suffix: plainText.slice(offsets.endOffset, offsets.endOffset + 80),
+      occurrenceIndex: countOccurrencesBefore(plainText, text, offsets.startOffset),
+      startOffset: offsets.startOffset,
+      endOffset: offsets.endOffset,
+    }
+    selectionToolbar.value = {
+      visible: true,
+      x: Math.min(rect.left + rect.width / 2, window.innerWidth - 120),
+      y: Math.max(12, rect.top - 44),
+    }
+  })
+}
+
+function handleArticleClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  const marker = target?.closest<HTMLElement>('[data-annotation-id]')
+  if (!marker) return
+  const annotation = annotations.value.find((item) => item.id === marker.dataset.annotationId)
+  if (annotation) {
+    openDrawer('annotations')
+    scrollToAnnotation(annotation.id)
+  }
+}
+
+async function createHighlight(note?: string | null) {
+  if (!document.value || !selectionDraft.value) return
+  const draft = selectionDraft.value
+  selectionToolbar.value.visible = false
+  annotationActionLoading.value = 'create'
+  try {
+    const annotation = await client.documents.createAnnotation(document.value.id, {
+      ...draft,
+      note,
+    })
+    annotations.value = [...annotations.value, annotation]
+    selectionDraft.value = null
+    window.getSelection()?.removeAllRanges()
+    toast({ title: note ? '批注已添加' : '高亮已添加', variant: 'success' })
+  } catch (error) {
+    notifyError(error, '高亮保存失败')
+  } finally {
+    annotationActionLoading.value = ''
+  }
+}
+
+function openCreateAnnotationDialog() {
+  if (!selectionDraft.value) return
+  editingAnnotation.value = null
+  annotationNote.value = ''
+  annotationDialogOpen.value = true
+  selectionToolbar.value.visible = false
+}
+
+function openEditAnnotationDialog(annotation: AnnotationDto) {
+  editingAnnotation.value = annotation
+  annotationNote.value = annotation.note || ''
+  annotationDialogOpen.value = true
+}
+
+async function submitAnnotationDialog() {
+  if (!document.value) return
+  const note = annotationNote.value.trim()
+
+  if (note.length > 1000) {
+    toast({ title: '批注内容过长', variant: 'destructive' })
+    return
+  }
+
+  annotationActionLoading.value = editingAnnotation.value?.id || 'create-note'
+  try {
+    if (editingAnnotation.value) {
+      const updated = await client.documents.updateAnnotation(
+        document.value.id,
+        editingAnnotation.value.id,
+        { note },
+      )
+      annotations.value = annotations.value.map((item) =>
+        item.id === updated.id ? updated : item,
+      )
+      toast({ title: '批注已更新', variant: 'success' })
+    } else {
+      await createHighlight(note)
+    }
+    annotationDialogOpen.value = false
+    annotationNote.value = ''
+    editingAnnotation.value = null
+  } catch (error) {
+    notifyError(error, '批注保存失败')
+  } finally {
+    annotationActionLoading.value = ''
+  }
+}
+
+async function deleteAnnotation(annotation: AnnotationDto) {
+  if (!document.value || !canEditAnnotations.value) return
+  annotationActionLoading.value = annotation.id
+  try {
+    await client.documents.deleteAnnotation(document.value.id, annotation.id)
+    annotations.value = annotations.value.filter((item) => item.id !== annotation.id)
+    toast({ title: '高亮已删除', variant: 'success' })
+  } catch (error) {
+    notifyError(error, '删除高亮失败')
+  } finally {
+    annotationActionLoading.value = ''
+  }
+}
+
+function scrollToAnnotation(id: string) {
+  const element = globalThis.document.querySelector(`[data-annotation-id="${id}"]`)
+  element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
 async function runDetailAction(action: () => Promise<void>, fallback: string) {
   actionLoading.value = true
   errorMessage.value = ''
@@ -401,6 +702,14 @@ function formatDate(value?: string | null) {
 
 function documentTypeLabel(value: DocumentType) {
   return documentTypes.find((item) => item.value === value)?.label || value
+}
+
+function readingStatusLabel(value: DocumentDetail['readingStatus']) {
+  return value === 'read' ? '已读' : '未读'
+}
+
+function readingStatusClass(value: DocumentDetail['readingStatus']) {
+  return value === 'unread' ? 'reading-status-badge is-unread' : 'reading-status-badge'
 }
 
 function aiList(items?: string[] | null) {
@@ -459,6 +768,96 @@ function scrollToHeading(id: string) {
     behavior: 'smooth',
     block: 'start',
   })
+}
+
+function applyAnnotationHighlights(html: string, items: AnnotationDto[]) {
+  if (!items.length || typeof DOMParser === 'undefined') return html
+
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(`<main>${html}</main>`, 'text/html')
+  const root = doc.body.firstElementChild
+  if (!root) return html
+
+  for (const annotation of [...items].sort((a, b) => b.startOffset - a.startOffset)) {
+    wrapTextRange(root, annotation.startOffset, annotation.endOffset, annotation.id)
+  }
+
+  return root.innerHTML
+}
+
+function wrapTextRange(root: Element, startOffset: number, endOffset: number, id: string) {
+  const nodes: Array<{ node: Text; start: number; end: number }> = []
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let currentOffset = 0
+  let current = walker.nextNode()
+
+  while (current) {
+    const node = current as Text
+    const length = node.data.length
+    nodes.push({ node, start: currentOffset, end: currentOffset + length })
+    currentOffset += length
+    current = walker.nextNode()
+  }
+
+  for (const item of nodes.reverse()) {
+    const localStart = Math.max(startOffset, item.start) - item.start
+    const localEnd = Math.min(endOffset, item.end) - item.start
+    if (localStart < 0 || localEnd > item.node.data.length || localStart >= localEnd) continue
+
+    const range = root.ownerDocument.createRange()
+    range.setStart(item.node, localStart)
+    range.setEnd(item.node, localEnd)
+    const span = root.ownerDocument.createElement('mark')
+    span.className = 'reader-annotation-mark'
+    span.dataset.annotationId = id
+    try {
+      range.surroundContents(span)
+    } catch {
+      // Keep the original text if the browser cannot wrap this range.
+    }
+  }
+}
+
+function getSelectionOffsets(root: HTMLElement, range: Range) {
+  const startRange = globalThis.document.createRange()
+  startRange.selectNodeContents(root)
+  startRange.setEnd(range.startContainer, range.startOffset)
+
+  const endRange = globalThis.document.createRange()
+  endRange.selectNodeContents(root)
+  endRange.setEnd(range.endContainer, range.endOffset)
+
+  const startOffset = startRange.toString().length
+  const endOffset = endRange.toString().length
+  if (endOffset <= startOffset) return null
+  return { startOffset, endOffset }
+}
+
+function hasAnnotationOverlap(startOffset: number, endOffset: number) {
+  return annotations.value.some(
+    (item) => item.startOffset < endOffset && item.endOffset > startOffset,
+  )
+}
+
+function countOccurrencesBefore(text: string, selectedText: string, offset: number) {
+  const before = text.slice(0, offset)
+  if (!selectedText) return 0
+  let count = 0
+  let index = before.indexOf(selectedText)
+  while (index >= 0) {
+    count += 1
+    index = before.indexOf(selectedText, index + selectedText.length)
+  }
+  return count
+}
+
+function normalizeCodeLang(info: string) {
+  const lang = info.trim().split(/\s+/)[0]?.toLowerCase() || 'text'
+  if (lang === 'js') return 'javascript'
+  if (lang === 'ts') return 'typescript'
+  if (lang === 'sh' || lang === 'zsh') return 'shell'
+  if (lang === 'yml') return 'yaml'
+  return lang
 }
 
 function notifyError(error: unknown, fallback: string) {
@@ -595,7 +994,20 @@ function getErrorMessage(error: unknown, fallback: string) {
       <header class="header article-header">
         <div class="header-spacer"></div>
         <div v-if="document" class="header-actions">
-          <UiButton variant="secondary" @click="toggleAiDrawer">
+          <UiButton
+            variant="secondary"
+            :disabled="!canEditReadingMarkers || actionLoading"
+            :title="document.favoritedAt ? '取消收藏' : '收藏'"
+            @click="toggleFavorite"
+          >
+            <Star :size="15" :class="{ 'is-filled-icon': document.favoritedAt }" />
+            {{ document.favoritedAt ? '已收藏' : '收藏' }}
+          </UiButton>
+          <UiButton variant="secondary" @click="openDrawer('annotations')">
+            <Highlighter :size="15" />
+            批注
+          </UiButton>
+          <UiButton variant="secondary" @click="openDrawer('ai')">
             <Bot :size="15" />
             AI
           </UiButton>
@@ -641,6 +1053,13 @@ function getErrorMessage(error: unknown, fallback: string) {
               <div class="article-detail-status">
                 <UiBadge :variant="statusVariant">{{ statusLabel }}</UiBadge>
                 <UiBadge variant="outline">{{ documentTypeLabel(document.type) }}</UiBadge>
+                <UiBadge
+                  :class="readingStatusClass(document.readingStatus)"
+                  variant="neutral"
+                >
+                  {{ readingStatusLabel(document.readingStatus) }}
+                </UiBadge>
+                <UiBadge v-if="document.favoritedAt" variant="neutral">已收藏</UiBadge>
                 <UiBadge v-if="document.aiAnalysisStatus" variant="neutral">
                   AI {{ aiStatusLabel }}
                 </UiBadge>
@@ -690,7 +1109,10 @@ function getErrorMessage(error: unknown, fallback: string) {
 
             <div
               v-else
+              ref="articleContentRef"
               class="article-detail-content markdown-reader"
+              @click="handleArticleClick"
+              @mouseup="handleTextSelection"
               v-html="renderedMarkdown"
             ></div>
           </article>
@@ -718,18 +1140,36 @@ function getErrorMessage(error: unknown, fallback: string) {
       </main>
     </div>
 
-    <aside v-if="document" class="ai-drawer" :class="{ open: aiOpen }">
+    <div
+      v-if="selectionToolbar.visible"
+      class="selection-toolbar"
+      :style="{ left: `${selectionToolbar.x}px`, top: `${selectionToolbar.y}px` }"
+      @mousedown.prevent
+    >
+      <button type="button" @click="createHighlight(null)">高亮</button>
+      <button type="button" @click="openCreateAnnotationDialog">批注</button>
+    </div>
+
+    <aside v-if="document" class="ai-drawer" :class="{ open: drawerOpen }">
       <header class="ai-drawer-header">
         <div>
-          <p class="kicker">Lumi AI</p>
-          <h2>阅读助手</h2>
+          <p class="kicker">Lumi</p>
+          <h2>辅助阅读</h2>
         </div>
-        <UiButton variant="ghost" size="icon" title="关闭 AI" @click="aiOpen = false">
+        <UiButton variant="ghost" size="icon" title="关闭辅助区" @click="drawerOpen = false">
           <X :size="16" />
         </UiButton>
       </header>
 
-      <div class="ai-drawer-body">
+      <div class="drawer-tabs">
+        <UiTabs
+          :model-value="drawerTab"
+          :items="drawerTabs"
+          @update:model-value="(value) => openDrawer(value as DrawerTab)"
+        />
+      </div>
+
+      <div v-if="drawerTab === 'ai'" class="ai-drawer-body">
         <section class="ai-section">
           <div class="ai-section-header">
             <h3>分析状态</h3>
@@ -823,7 +1263,50 @@ function getErrorMessage(error: unknown, fallback: string) {
         </section>
       </div>
 
-      <form class="ai-question-form" @submit.prevent="askAi">
+      <div v-else class="ai-drawer-body">
+        <section class="ai-section">
+          <div class="ai-section-header">
+            <h3>高亮与批注</h3>
+            <UiBadge variant="neutral">{{ annotations.length }}</UiBadge>
+          </div>
+          <p v-if="isTrash" class="ai-muted">回收站文章只读，恢复后可以继续编辑批注。</p>
+          <p v-else class="ai-muted">在正文中选中文字，可以创建高亮或批注。</p>
+        </section>
+
+        <section class="ai-section annotation-list-section">
+          <p v-if="annotationsLoading" class="ai-muted">正在加载批注...</p>
+          <p v-else-if="annotations.length === 0" class="ai-muted">还没有高亮或批注。</p>
+          <article v-for="item in sortedAnnotations" v-else :key="item.id" class="annotation-item">
+            <button class="annotation-text" type="button" @click="scrollToAnnotation(item.id)">
+              {{ item.selectedText }}
+            </button>
+            <p v-if="item.note" class="annotation-note">{{ item.note }}</p>
+            <p v-else class="annotation-note muted">未添加批注</p>
+            <div v-if="canEditAnnotations" class="annotation-actions">
+              <UiButton
+                variant="ghost"
+                size="sm"
+                :disabled="Boolean(annotationActionLoading)"
+                @click="openEditAnnotationDialog(item)"
+              >
+                <PencilLine :size="13" />
+                编辑
+              </UiButton>
+              <UiButton
+                variant="ghost"
+                size="sm"
+                :disabled="Boolean(annotationActionLoading)"
+                @click="deleteAnnotation(item)"
+              >
+                <Trash2 :size="13" />
+                删除
+              </UiButton>
+            </div>
+          </article>
+        </section>
+      </div>
+
+      <form v-if="drawerTab === 'ai'" class="ai-question-form" @submit.prevent="askAi">
         <UiInput
           v-model="aiQuestion"
           :disabled="!isIngestSucceeded || Boolean(streamingConversationId)"
@@ -838,6 +1321,31 @@ function getErrorMessage(error: unknown, fallback: string) {
         </UiButton>
       </form>
     </aside>
+
+    <UiDialog
+      :open="annotationDialogOpen"
+      :title="editingAnnotation ? '编辑批注' : '添加批注'"
+      description="批注会绑定到当前选中的正文。"
+      @update:open="annotationDialogOpen = $event"
+    >
+      <form class="dialog-form" @submit.prevent="submitAnnotationDialog">
+        <label class="field-group">
+          <span>批注</span>
+          <textarea
+            v-model="annotationNote"
+            class="ui-input annotation-textarea"
+            maxlength="1000"
+            placeholder="写下这段内容给你的提示..."
+          ></textarea>
+        </label>
+        <div class="dialog-actions">
+          <UiButton variant="ghost" @click="annotationDialogOpen = false">取消</UiButton>
+          <UiButton type="submit" :disabled="Boolean(annotationActionLoading)">
+            {{ annotationActionLoading ? '保存中...' : '保存批注' }}
+          </UiButton>
+        </div>
+      </form>
+    </UiDialog>
 
     <UiDialog
       :open="Boolean(confirmDialog)"

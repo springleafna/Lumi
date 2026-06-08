@@ -197,6 +197,10 @@ a {
   transition: border-color 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
+.ui-input[type="file"] {
+  padding-top: 7px;
+}
+
 .ui-input::placeholder {
   color: var(--fg-muted);
 }
@@ -325,6 +329,26 @@ a {
 .ui-badge--success {
   color: var(--success);
   background: var(--success-bg);
+}
+
+.reading-status-badge {
+  position: relative;
+}
+
+.reading-status-badge.is-unread {
+  padding-left: 18px;
+}
+
+.reading-status-badge.is-unread::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #dc2626;
+  transform: translateY(-50%);
 }
 
 .ui-tabs {
@@ -777,7 +801,9 @@ a {
 
 .article-list-toolbar {
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: var(--space-3);
   margin-bottom: var(--space-4);
 }
 
@@ -790,6 +816,17 @@ a {
 
 .article-search-form .ui-search {
   flex: 1;
+}
+
+.article-list-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.favorite-filter-button.is-active {
+  color: var(--bg-primary);
+  background: var(--fg-primary);
 }
 
 .article-grid {
@@ -1444,6 +1481,128 @@ a {
   background: rgba(24, 24, 27, 0.08);
 }
 
+.is-filled-icon {
+  fill: currentColor;
+}
+
+.field-hint {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--fg-tertiary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.selection-toolbar {
+  position: fixed;
+  z-index: 55;
+  display: inline-flex;
+  gap: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1);
+  background: var(--fg-primary);
+  box-shadow: var(--shadow-lg);
+  transform: translateX(-50%);
+}
+
+.selection-toolbar button {
+  min-height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
+  color: var(--bg-primary);
+  background: transparent;
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.selection-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.reader-annotation-mark {
+  border-radius: 3px;
+  padding: 0 2px;
+  background: #e7e5e4;
+  color: inherit;
+  cursor: pointer;
+}
+
+.reader-annotation-mark:hover {
+  background: #d6d3d1;
+}
+
+.drawer-tabs {
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-3) var(--space-5);
+}
+
+.drawer-tabs .ui-tabs {
+  width: 100%;
+}
+
+.drawer-tabs .ui-tab {
+  flex: 1;
+  justify-content: center;
+}
+
+.annotation-list-section {
+  gap: var(--space-3);
+}
+
+.annotation-item {
+  display: grid;
+  gap: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--bg-secondary);
+}
+
+.annotation-text {
+  display: -webkit-box;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  color: var(--fg-primary);
+  background: transparent;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-normal);
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.annotation-text:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.annotation-note {
+  margin: 0;
+  color: var(--fg-tertiary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  white-space: pre-wrap;
+}
+
+.annotation-note.muted {
+  color: var(--fg-muted);
+}
+
+.annotation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.annotation-textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: var(--leading-normal);
+}
+
 .loading-card {
   display: grid;
   gap: var(--space-3);
@@ -1513,6 +1672,23 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .article-list-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .article-search-form {
+    width: 100%;
+  }
+
+  .article-list-filters {
+    justify-content: space-between;
+  }
+
+  .article-list-filters .ui-tabs {
+    width: auto;
+  }
+
   .article-reading-layout {
     width: min(100%, 720px);
     grid-template-columns: minmax(0, 1fr);
@@ -1557,6 +1733,7 @@ a {
   .header-actions,
   .article-list-header,
   .article-search-form,
+  .article-list-filters,
   .pagination-bar,
   .dialog-actions {
     align-items: stretch;
@@ -1567,6 +1744,8 @@ a {
   .article-search-form,
   .article-search-form .ui-search,
   .article-search-form .ui-button,
+  .article-list-filters .ui-tabs,
+  .article-list-filters .ui-button,
   .header-actions .ui-select,
   .header-actions .ui-button,
   .dialog-actions .ui-button {

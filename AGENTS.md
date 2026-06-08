@@ -55,6 +55,15 @@ The repository is a pnpm monorepo. Prefer running scripts from the repository ro
   - structured AI reading card and auto tags
   - current-document AI Q&A with streaming response
   - per-document AI conversation history
+- MVP5:
+  - two-state reading status: unread and read
+  - documents default to unread and detail view auto-marks unread documents as read
+  - favorite/unfavorite documents independently from archive and reading status
+  - document list filters for unread, read, and favorite documents
+  - document annotations: text highlight, optional note, list, edit, delete, and scroll-to-highlight
+  - Web local `.md` / `.txt` file import; local file documents use source `本地`
+  - extension selected-content import into `fragment` documents
+  - Shiki-based fenced code block highlighting in the Markdown reader
 
 ## Web UI Direction
 
@@ -158,6 +167,11 @@ If the PostgreSQL password contains special characters such as `#`, URL-encode t
 - Document timestamps:
   - `deletedAt`: soft delete/trash state
   - `archivedAt`: archive state
+- `Document.readingStatus` has only `unread` and `read`.
+- New documents default to `unread`; Web detail view calls the reading-status API to mark succeeded, non-trash unread documents as `read`.
+- `Document.favoritedAt` tracks favorite state and is independent from archive and reading status.
+- Web list supports reading status and favorite filters in the search toolbar; do not add duplicate favorite badges to card footers.
+- Local file import should set `Document.source = 本地`.
 - Tags are manual plain-text tags.
 - AI generated tags are written into the same manual tag system and remain user editable.
 
@@ -185,7 +199,7 @@ SILICONFLOW_BASE_URL="https://api.siliconflow.cn/v1"
 SILICONFLOW_MODEL=""
 ```
 
-## MVP3 Document API
+## Document API
 
 Current document API surface includes:
 
@@ -198,8 +212,14 @@ PATCH  /api/documents/:id/archive
 PATCH  /api/documents/:id/unarchive
 PATCH  /api/documents/:id/restore
 DELETE /api/documents/:id/permanent
+PATCH  /api/documents/:id/reading-status
+PATCH  /api/documents/:id/favorite
 POST   /api/documents/:id/tags
 DELETE /api/documents/:id/tags/:tagId
+GET    /api/documents/:id/annotations
+POST   /api/documents/:id/annotations
+PATCH  /api/documents/:id/annotations/:annotationId
+DELETE /api/documents/:id/annotations/:annotationId
 ```
 
 Document list supports:
@@ -209,6 +229,8 @@ Document list supports:
 - `type`: `article`, `video`, `audio`, `pdf`, `fragment`
 - `tag`: tag id
 - `source`: source string
+- `readingStatus`: `unread`, `read`
+- `favorite`: `true`
 - `sort`: `created_desc`, `created_asc`, `updated_desc`, `updated_asc`
 - `page`
 - `pageSize`
@@ -218,6 +240,8 @@ Document list supports:
 ```txt
 POST /api/ingest/url
 POST /api/ingest/html
+POST /api/ingest/file
+POST /api/ingest/selection
 ```
 
 HTML ingest request:
@@ -234,6 +258,10 @@ HTML ingest request:
 - Creates an `IngestJob`.
 - `POST /api/ingest/html` uses `type = html`.
 - Duplicate URL rules are shared with URL ingest.
+- `POST /api/ingest/file` accepts multipart field `file`, supports `.md` and `.txt`, max `2MB`, and creates a complete article immediately.
+- File imports are not deduplicated by URL and should show source `本地`.
+- `POST /api/ingest/selection` saves current selected page content as `type = fragment`, max `200KB`, and creates a new fragment each time.
+- File import attempts to enqueue AI analysis; selection import does not automatically enqueue AI analysis.
 
 ## MVP2 Extension Notes
 
@@ -243,6 +271,8 @@ HTML ingest request:
   - saves current URL via `client.ingest.url`
   - captures full page HTML via `browser.scripting.executeScript`
   - saves full page HTML via `client.ingest.html`
+  - captures current selection HTML/text
+  - saves selected content via `client.ingest.selection`
   - opens saved document in a new tab
 - Options:
   - edits API base URL and Web base URL

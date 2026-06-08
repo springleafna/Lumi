@@ -23,6 +23,7 @@ export type DocumentType = 'article' | 'video' | 'audio' | 'pdf' | 'fragment';
 export type DocumentStatus = 'active' | 'archived' | 'trash';
 export type DocumentSort = 'created_desc' | 'created_asc' | 'updated_desc' | 'updated_asc';
 export type DocumentIngestStatus = 'pending' | 'processing' | 'succeeded' | 'failed';
+export type DocumentReadingStatus = 'unread' | 'read';
 export type AiAnalysisStatus = 'pending' | 'processing' | 'succeeded' | 'failed';
 export type AiConversationStatus = 'processing' | 'succeeded' | 'failed';
 
@@ -49,6 +50,8 @@ export type DocumentSummary = {
   wordCount?: number | null;
   ingestStatus: DocumentIngestStatus;
   ingestErrorMessage?: string | null;
+  readingStatus: DocumentReadingStatus;
+  favoritedAt?: string | null;
   aiAnalysisStatus?: AiAnalysisStatus | null;
   archivedAt?: string | null;
   deletedAt?: string | null;
@@ -90,12 +93,21 @@ export type IngestHtmlRequest = {
   html: string;
 };
 
+export type IngestSelectionRequest = {
+  url: string;
+  title?: string;
+  selectedHtml?: string;
+  selectedText?: string;
+};
+
 export type IngestUrlResponse = {
   document: DocumentDetail;
   job: IngestJobDto;
 };
 
 export type IngestHtmlResponse = IngestUrlResponse;
+export type IngestFileResponse = IngestUrlResponse;
+export type IngestSelectionResponse = IngestUrlResponse;
 
 export type ListDocumentsParams = {
   keyword?: string;
@@ -103,6 +115,8 @@ export type ListDocumentsParams = {
   type?: DocumentType;
   tag?: string;
   source?: string;
+  readingStatus?: DocumentReadingStatus;
+  favorite?: boolean;
   sort?: DocumentSort;
   page?: number;
   pageSize?: number;
@@ -122,6 +136,42 @@ export type DocumentFacets = {
 
 export type AddDocumentTagRequest = {
   name: string;
+};
+
+export type UpdateReadingStatusRequest = {
+  readingStatus: DocumentReadingStatus;
+};
+
+export type UpdateFavoriteRequest = {
+  favorite: boolean;
+};
+
+export type AnnotationDto = {
+  id: string;
+  selectedText: string;
+  note?: string | null;
+  prefix?: string | null;
+  suffix?: string | null;
+  occurrenceIndex: number;
+  startOffset: number;
+  endOffset: number;
+  createdAt: string;
+  updatedAt: string;
+  documentId: string;
+};
+
+export type CreateAnnotationRequest = {
+  selectedText: string;
+  note?: string | null;
+  prefix?: string | null;
+  suffix?: string | null;
+  occurrenceIndex?: number;
+  startOffset: number;
+  endOffset: number;
+};
+
+export type UpdateAnnotationRequest = {
+  note?: string | null;
 };
 
 export type AiCitationDto = {

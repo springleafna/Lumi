@@ -11,9 +11,14 @@ import {
 } from '@nestjs/common';
 import type {
   AddDocumentTagRequest,
+  CreateAnnotationRequest,
   DocumentSort,
   DocumentStatus,
   DocumentType,
+  DocumentReadingStatus,
+  UpdateAnnotationRequest,
+  UpdateFavoriteRequest,
+  UpdateReadingStatusRequest,
   UserDto,
 } from '@lumi/shared';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -37,6 +42,8 @@ export class DocumentsController {
     @Query('type') type?: DocumentType,
     @Query('tag') tag?: string,
     @Query('source') source?: string,
+    @Query('readingStatus') readingStatus?: DocumentReadingStatus,
+    @Query('favorite') favorite?: string,
     @Query('sort') sort?: DocumentSort,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
@@ -47,6 +54,8 @@ export class DocumentsController {
       type,
       tag,
       source,
+      readingStatus,
+      favorite: favorite === 'true' ? true : undefined,
       sort,
       page: Number(page) || 1,
       pageSize: Number(pageSize) || 20,
@@ -78,6 +87,24 @@ export class DocumentsController {
     return this.documentsService.restore(user.id, id);
   }
 
+  @Patch(':id/reading-status')
+  updateReadingStatus(
+    @CurrentUser() user: UserDto,
+    @Param('id') id: string,
+    @Body() body: UpdateReadingStatusRequest,
+  ) {
+    return this.documentsService.updateReadingStatus(user.id, id, body.readingStatus);
+  }
+
+  @Patch(':id/favorite')
+  updateFavorite(
+    @CurrentUser() user: UserDto,
+    @Param('id') id: string,
+    @Body() body: UpdateFavoriteRequest,
+  ) {
+    return this.documentsService.updateFavorite(user.id, id, Boolean(body.favorite));
+  }
+
   @Post(':id/tags')
   addTag(
     @CurrentUser() user: UserDto,
@@ -99,6 +126,39 @@ export class DocumentsController {
     @Param('tagId') tagId: string,
   ) {
     return this.documentsService.removeTag(user.id, id, tagId);
+  }
+
+  @Get(':id/annotations')
+  listAnnotations(@CurrentUser() user: UserDto, @Param('id') id: string) {
+    return this.documentsService.listAnnotations(user.id, id);
+  }
+
+  @Post(':id/annotations')
+  createAnnotation(
+    @CurrentUser() user: UserDto,
+    @Param('id') id: string,
+    @Body() body: CreateAnnotationRequest,
+  ) {
+    return this.documentsService.createAnnotation(user.id, id, body);
+  }
+
+  @Patch(':id/annotations/:annotationId')
+  updateAnnotation(
+    @CurrentUser() user: UserDto,
+    @Param('id') id: string,
+    @Param('annotationId') annotationId: string,
+    @Body() body: UpdateAnnotationRequest,
+  ) {
+    return this.documentsService.updateAnnotation(user.id, id, annotationId, body);
+  }
+
+  @Delete(':id/annotations/:annotationId')
+  deleteAnnotation(
+    @CurrentUser() user: UserDto,
+    @Param('id') id: string,
+    @Param('annotationId') annotationId: string,
+  ) {
+    return this.documentsService.deleteAnnotation(user.id, id, annotationId);
   }
 
   @Delete(':id')
