@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  Settings,
   Star,
   Tag,
   Trash2,
@@ -21,7 +22,7 @@ import {
 } from 'lucide-vue-next'
 import MarkdownIt from 'markdown-it'
 import { createHighlighter, type Highlighter as ShikiHighlighter } from 'shiki/bundle/web'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
 import type {
@@ -61,6 +62,11 @@ type SelectionDraft = {
   prefix: string
   suffix: string
   occurrenceIndex: number
+  startOffset: number
+  endOffset: number
+}
+
+type CitationRange = {
   startOffset: number
   endOffset: number
 }
@@ -173,7 +179,7 @@ const renderedMarkdown = computed(() => {
     }),
   )
 
-  return applyAnnotationHighlights(html, sortedAnnotations.value)
+  return applyReaderHighlights(html, sortedAnnotations.value, citationRange.value)
 })
 
 const sortedAnnotations = computed(() =>
@@ -200,7 +206,9 @@ const shouldPollDocument = computed(
     document.value?.aiAnalysisStatus === 'pending' ||
     document.value?.aiAnalysisStatus === 'processing' ||
     document.value?.aiAnalysis?.status === 'pending' ||
-    document.value?.aiAnalysis?.status === 'processing',
+    document.value?.aiAnalysis?.status === 'processing' ||
+    document.value?.embeddingIndexStatus === 'pending' ||
+    document.value?.embeddingIndexStatus === 'processing',
 )
 
 const statusLabel = computed(() => {
@@ -239,6 +247,50 @@ const aiStatusLabel = computed(() => {
   return '未生成'
 })
 
+const citationRange = computed<CitationRange | null>(() => {
+  const start = Number(route.query.citationStart)
+  const end = Number(route.query.citationEnd)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || start < 0) {
+    return null
+  }
+  return {
+    startOffset: start,
+    endOffset: end,
+  }
+})
+
+const embeddingIndexLabel = computed(() => {
+  const status = document.value?.embeddingIndexStatus
+  if (status === 'pending') return '待索引'
+  if (status === 'processing') return '索引中'
+  if (status === 'succeeded') return '已索引'
+  if (status === 'failed') return '索引失败'
+  if (status === 'not_configured') return '未配置'
+  if (status === 'not_applicable') return '不适用'
+  return '未知'
+})
+
+const embeddingIndexVariant = computed<'neutral' | 'destructive' | 'outline'>(() => {
+  if (document.value?.embeddingIndexStatus === 'failed') return 'destructive'
+  if (document.value?.embeddingIndexStatus === 'not_configured') return 'outline'
+  return 'neutral'
+})
+
+const embeddingIndexDescription = computed(() => {
+  const status = document.value?.embeddingIndexStatus
+  if (status === 'succeeded' && document.value?.embeddingIndexedAt) {
+    return `已进入知识库问答索引，完成于 ${formatDate(document.value.embeddingIndexedAt)}。`
+  }
+  if (status === 'pending') return '文档已等待进入知识库索引队列。'
+  if (status === 'processing') return 'Lumi 正在为这篇文档生成知识库向量索引。'
+  if (status === 'failed') {
+    return document.value?.embeddingIndexErrorMessage || '索引生成失败，可在设置页重试该任务。'
+  }
+  if (status === 'not_configured') return '需要先在设置页配置 Embedding，后续新文档才会自动进入知识库问答。'
+  if (status === 'not_applicable') return '当前文档不在知识库索引范围内，或尚未创建索引任务。'
+  return '暂无索引状态。'
+})
+
 onMounted(async () => {
   initShiki()
   await loadDocument()
@@ -247,6 +299,11 @@ onMounted(async () => {
       void loadDocument({ silent: true })
     }
   }, 4000)
+})
+
+watch(citationRange, async () => {
+  await nextTick()
+  scrollToCitationRange()
 })
 
 onBeforeUnmount(() => {
@@ -294,6 +351,8 @@ async function loadDocument(options: { silent?: boolean } = {}) {
     if (drawerOpen.value && drawerTab.value === 'ai' && isIngestSucceeded.value) {
       await loadConversations()
     }
+    await nextTick()
+    scrollToCitationRange()
   } catch (error) {
     notifyError(error, '文章加载失败')
   } finally {
@@ -678,6 +737,12 @@ function scrollToAnnotation(id: string) {
   element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
+function scrollToCitationRange() {
+  if (!citationRange.value) return
+  const element = globalThis.document.querySelector('[data-citation-highlight="true"]')
+  element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
 async function runDetailAction(action: () => Promise<void>, fallback: string) {
   actionLoading.value = true
   errorMessage.value = ''
@@ -770,8 +835,13 @@ function scrollToHeading(id: string) {
   })
 }
 
-function applyAnnotationHighlights(html: string, items: AnnotationDto[]) {
-  if (!items.length || typeof DOMParser === 'undefined') return html
+function applyReaderHighlights(
+  html: string,
+  items: AnnotationDto[],
+  citation: CitationRange | null,
+) {
+  if (!items.length && !citation) return html
+  if (typeof DOMParser === 'undefined') return html
 
   const parser = new DOMParser()
   const doc = parser.parseFromString(`<main>${html}</main>`, 'text/html')
@@ -779,13 +849,32 @@ function applyAnnotationHighlights(html: string, items: AnnotationDto[]) {
   if (!root) return html
 
   for (const annotation of [...items].sort((a, b) => b.startOffset - a.startOffset)) {
-    wrapTextRange(root, annotation.startOffset, annotation.endOffset, annotation.id)
+    wrapTextRange(root, annotation.startOffset, annotation.endOffset, {
+      className: 'reader-annotation-mark',
+      annotationId: annotation.id,
+    })
+  }
+
+  if (citation) {
+    wrapTextRange(root, citation.startOffset, citation.endOffset, {
+      className: 'reader-citation-mark',
+      citation: true,
+    })
   }
 
   return root.innerHTML
 }
 
-function wrapTextRange(root: Element, startOffset: number, endOffset: number, id: string) {
+function wrapTextRange(
+  root: Element,
+  startOffset: number,
+  endOffset: number,
+  options: {
+    className: string
+    annotationId?: string
+    citation?: boolean
+  },
+) {
   const nodes: Array<{ node: Text; start: number; end: number }> = []
   const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   let currentOffset = 0
@@ -808,8 +897,13 @@ function wrapTextRange(root: Element, startOffset: number, endOffset: number, id
     range.setStart(item.node, localStart)
     range.setEnd(item.node, localEnd)
     const span = root.ownerDocument.createElement('mark')
-    span.className = 'reader-annotation-mark'
-    span.dataset.annotationId = id
+    span.className = options.className
+    if (options.annotationId) {
+      span.dataset.annotationId = options.annotationId
+    }
+    if (options.citation) {
+      span.dataset.citationHighlight = 'true'
+    }
     try {
       range.surroundContents(span)
     } catch {
@@ -893,6 +987,14 @@ function getErrorMessage(error: unknown, fallback: string) {
           <button class="sidebar-link" type="button" @click="router.push('/documents')">
             <ArrowLeft class="sidebar-link-icon" />
             <span>返回文章库</span>
+          </button>
+          <button class="sidebar-link" type="button" @click="router.push('/knowledge-chat')">
+            <Bot class="sidebar-link-icon" />
+            <span>知识库问答</span>
+          </button>
+          <button class="sidebar-link" type="button" @click="router.push('/settings')">
+            <Settings class="sidebar-link-icon" />
+            <span>设置</span>
           </button>
         </nav>
       </section>
@@ -1063,6 +1165,9 @@ function getErrorMessage(error: unknown, fallback: string) {
                 <UiBadge v-if="document.aiAnalysisStatus" variant="neutral">
                   AI {{ aiStatusLabel }}
                 </UiBadge>
+                <UiBadge :variant="embeddingIndexVariant">
+                  知识库索引 {{ embeddingIndexLabel }}
+                </UiBadge>
               </div>
               <h1 class="article-detail-title">{{ document.title }}</h1>
               <div class="article-detail-meta">
@@ -1073,6 +1178,18 @@ function getErrorMessage(error: unknown, fallback: string) {
                 </span>
                 <span v-if="document.updatedAt">更新 {{ formatDate(document.updatedAt) }}</span>
                 <span v-for="item in readingMeta" :key="String(item)">{{ item }}</span>
+              </div>
+              <div class="article-index-status">
+                <p>{{ embeddingIndexDescription }}</p>
+                <UiButton
+                  v-if="document.embeddingIndexStatus === 'failed' || document.embeddingIndexStatus === 'not_configured'"
+                  variant="secondary"
+                  size="sm"
+                  @click="router.push('/settings?tab=jobs')"
+                >
+                  <Settings :size="14" />
+                  查看设置
+                </UiButton>
               </div>
               <div v-if="document.tags.length" class="article-detail-tags">
                 <UiBadge v-for="item in document.tags" :key="item.id" variant="neutral">

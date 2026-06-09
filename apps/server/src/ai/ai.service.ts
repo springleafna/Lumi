@@ -41,6 +41,8 @@ export class AiService {
       throw new BadRequestException('文章解析完成后才能生成 AI 分析');
     }
 
+    await this.providerService.getChatConfig();
+
     const analysis = await this.prisma.aiAnalysis.upsert({
       where: { documentId },
       update: {
@@ -64,12 +66,12 @@ export class AiService {
       throw new BadRequestException('文章尚未解析完成');
     }
 
-    const provider = this.providerService.getConfig();
+    const provider = await this.providerService.getChatConfig();
     await this.prisma.aiAnalysis.upsert({
       where: { documentId },
       update: {
         status: 'processing',
-        provider: provider.provider,
+        provider: provider.providerPreset,
         model: provider.model,
         errorMessage: null,
         startedAt: new Date(),
@@ -78,7 +80,7 @@ export class AiService {
         userId,
         documentId,
         status: 'processing',
-        provider: provider.provider,
+        provider: provider.providerPreset,
         model: provider.model,
         startedAt: new Date(),
       },
@@ -101,7 +103,7 @@ export class AiService {
         where: { documentId },
         data: {
           status: 'succeeded',
-          provider: provider.provider,
+          provider: provider.providerPreset,
           model: provider.model,
           language: 'zh-CN',
           oneSentenceSummary: payload.oneSentenceSummary || null,
@@ -164,7 +166,7 @@ export class AiService {
       throw new BadRequestException('文章解析完成后才能提问');
     }
 
-    const provider = this.providerService.getConfig();
+    const provider = await this.providerService.getChatConfig();
     const citations = findRelevantCitations(document.contentText || document.markdown, question);
     const conversation = await this.prisma.aiConversation.create({
       data: {
@@ -172,7 +174,7 @@ export class AiService {
         documentId,
         question,
         citations,
-        provider: provider.provider,
+        provider: provider.providerPreset,
         model: provider.model,
         status: 'processing',
       },

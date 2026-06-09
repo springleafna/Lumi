@@ -2,7 +2,9 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { TOKEN_KEY } from '../lib/client'
 import DocumentDetailPage from '../views/DocumentDetailPage.vue'
 import DocumentsPage from '../views/DocumentsPage.vue'
+import KnowledgeChatPage from '../views/KnowledgeChatPage.vue'
 import LoginPage from '../views/LoginPage.vue'
+import SettingsPage from '../views/SettingsPage.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -24,6 +26,16 @@ export const router = createRouter({
     {
       path: '/documents/:id',
       component: DocumentDetailPage,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/knowledge-chat',
+      component: KnowledgeChatPage,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/settings',
+      component: SettingsPage,
       meta: { requiresAuth: true },
     },
   ],

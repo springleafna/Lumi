@@ -26,6 +26,13 @@ export type DocumentIngestStatus = 'pending' | 'processing' | 'succeeded' | 'fai
 export type DocumentReadingStatus = 'unread' | 'read';
 export type AiAnalysisStatus = 'pending' | 'processing' | 'succeeded' | 'failed';
 export type AiConversationStatus = 'processing' | 'succeeded' | 'failed';
+export type AiProviderTestStatus = 'succeeded' | 'failed';
+export type DocumentEmbeddingStatus = 'pending' | 'processing' | 'succeeded' | 'failed';
+export type DocumentEmbeddingIndexStatus =
+  | 'not_applicable'
+  | 'not_configured'
+  | DocumentEmbeddingStatus;
+export type KnowledgeChatMessageStatus = 'processing' | 'succeeded' | 'failed' | 'aborted';
 
 export type TagDto = {
   id: string;
@@ -53,6 +60,9 @@ export type DocumentSummary = {
   readingStatus: DocumentReadingStatus;
   favoritedAt?: string | null;
   aiAnalysisStatus?: AiAnalysisStatus | null;
+  embeddingIndexStatus?: DocumentEmbeddingIndexStatus | null;
+  embeddingIndexErrorMessage?: string | null;
+  embeddingIndexedAt?: string | null;
   archivedAt?: string | null;
   deletedAt?: string | null;
   publishedAt?: string | null;
@@ -227,4 +237,112 @@ export type RetryAiAnalysisResponse = {
 export type RetryIngestResponse = {
   document: DocumentDetail;
   job: IngestJobDto;
+};
+
+export type AiProviderConfigDto = {
+  configured: boolean;
+  providerPreset?: string | null;
+  baseUrl?: string | null;
+  model?: string | null;
+  hasApiKey: boolean;
+  dimension?: number | null;
+  lastTestStatus?: AiProviderTestStatus | null;
+  lastTestError?: string | null;
+  lastTestedAt?: string | null;
+};
+
+export type AiSettingsDto = {
+  chat: AiProviderConfigDto;
+  embedding: AiProviderConfigDto;
+  encryptionReady: boolean;
+};
+
+export type UpdateAiProviderConfigRequest = {
+  providerPreset?: string | null;
+  baseUrl: string;
+  model: string;
+  apiKey?: string | null;
+};
+
+export type AiProviderTestResultDto = {
+  status: AiProviderTestStatus;
+  message?: string | null;
+  testedAt: string;
+  dimension?: number | null;
+};
+
+export type ListEmbeddingJobsParams = {
+  status?: DocumentEmbeddingStatus;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export type DocumentEmbeddingJobDto = {
+  id: string;
+  status: DocumentEmbeddingStatus;
+  errorMessage?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  dimension?: number | null;
+  configFingerprint?: string | null;
+  chunkCount: number;
+  documentId: string;
+  documentTitle: string;
+  documentType: DocumentType;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+};
+
+export type RetryEmbeddingJobResponse = {
+  job: DocumentEmbeddingJobDto;
+};
+
+export type KnowledgeChatCitationDto = {
+  id: string;
+  index: number;
+  excerpt: string;
+  score?: number | null;
+  startOffset?: number | null;
+  endOffset?: number | null;
+  documentId?: string | null;
+  chunkId?: string | null;
+  documentTitle: string;
+  documentSource?: string | null;
+  documentArchivedAt?: string | null;
+  documentCreatedAt?: string | null;
+  sourceDeleted: boolean;
+  createdAt: string;
+};
+
+export type KnowledgeChatMessageDto = {
+  id: string;
+  question: string;
+  answer?: string | null;
+  status: KnowledgeChatMessageStatus;
+  provider?: string | null;
+  model?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt?: string | null;
+  citations: KnowledgeChatCitationDto[];
+};
+
+export type KnowledgeChatSessionDto = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages?: KnowledgeChatMessageDto[];
+};
+
+export type CreateKnowledgeChatRequest = {
+  question: string;
+};
+
+export type UpdateKnowledgeChatSessionRequest = {
+  title: string;
 };

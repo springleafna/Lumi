@@ -4,6 +4,8 @@ import { parseArticleFromHtml } from '@lumi/parser';
 import axios from 'axios';
 import { Worker, type Job } from 'bullmq';
 import type { RedisOptions } from 'ioredis';
+import { AiProviderService } from '../ai/ai-provider.service';
+import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   INGEST_QUEUE_NAME,
@@ -28,6 +30,8 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queueService: QueueService,
+    private readonly aiProviderService: AiProviderService,
+    private readonly embeddingsService: EmbeddingsService,
     @Inject(REDIS_CONNECTION_OPTIONS)
     private readonly connection: RedisOptions,
   ) {}
@@ -124,6 +128,7 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
       });
 
       await this.enqueueAiAnalysis(document.userId, document.id);
+      await this.embeddingsService.enqueueDocumentIndexBestEffort(document.userId, document.id);
     } catch (error) {
       const message = getErrorMessage(error);
       await this.prisma.$transaction([
@@ -149,6 +154,7 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
 
   private async enqueueAiAnalysis(userId: string, documentId: string) {
     try {
+      await this.aiProviderService.getChatConfig();
       await this.prisma.aiAnalysis.upsert({
         where: { documentId },
         update: {
@@ -164,6 +170,10 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
       await this.queueService.addAiAnalysisJob({ documentId, userId });
     } catch (error) {
       const message = getErrorMessage(error);
+      if (message.includes('请先配置 AI')) {
+        this.logger.warn(`AI 未配置，跳过自动分析 ${documentId}`);
+        return;
+      }
       this.logger.warn(`AI 分析任务创建失败 ${documentId}: ${message}`);
       try {
         await this.prisma.aiAnalysis.upsert({

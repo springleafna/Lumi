@@ -4,10 +4,14 @@ import type {
   AnnotationDto,
   AiAnalysisDto,
   AiConversationDto,
+  AiProviderTestResultDto,
+  AiSettingsDto,
   ApiResponse,
   CreateAnnotationRequest,
   CreateAiConversationRequest,
+  CreateKnowledgeChatRequest,
   DocumentDetail,
+  DocumentEmbeddingJobDto,
   DocumentFacets,
   DocumentSummary,
   IngestFileResponse,
@@ -17,14 +21,19 @@ import type {
   IngestSelectionResponse,
   IngestUrlRequest,
   IngestUrlResponse,
+  KnowledgeChatSessionDto,
+  ListEmbeddingJobsParams,
   ListDocumentsParams,
   LoginRequest,
   LoginResponse,
   PageResult,
   RetryAiAnalysisResponse,
+  RetryEmbeddingJobResponse,
   RetryIngestResponse,
   UpdateAnnotationRequest,
+  UpdateAiProviderConfigRequest,
   UpdateFavoriteRequest,
+  UpdateKnowledgeChatSessionRequest,
   UpdateReadingStatusRequest,
   UserDto,
 } from '@lumi/shared';
@@ -82,6 +91,91 @@ export function createLumiClient(options: LumiClientOptions) {
         request<IngestFileResponse>(http, 'post', '/ingest/file', payload),
       selection: (payload: IngestSelectionRequest) =>
         request<IngestSelectionResponse>(http, 'post', '/ingest/selection', payload),
+    },
+    settings: {
+      getAiSettings: () => request<AiSettingsDto>(http, 'get', '/settings/ai'),
+      updateChatConfig: (payload: UpdateAiProviderConfigRequest) =>
+        request<AiSettingsDto>(http, 'put', '/settings/ai/chat', payload),
+      updateEmbeddingConfig: (payload: UpdateAiProviderConfigRequest) =>
+        request<AiSettingsDto>(http, 'put', '/settings/ai/embedding', payload),
+      clearChatConfig: () => request<AiSettingsDto>(http, 'delete', '/settings/ai/chat'),
+      clearEmbeddingConfig: () =>
+        request<AiSettingsDto>(http, 'delete', '/settings/ai/embedding'),
+      testChatConfig: () =>
+        request<AiProviderTestResultDto>(http, 'post', '/settings/ai/chat/test'),
+      testEmbeddingConfig: () =>
+        request<AiProviderTestResultDto>(http, 'post', '/settings/ai/embedding/test'),
+    },
+    embeddingJobs: {
+      list: (params: ListEmbeddingJobsParams = {}) =>
+        request<PageResult<DocumentEmbeddingJobDto>>(
+          http,
+          'get',
+          '/settings/embedding-jobs',
+          undefined,
+          { params },
+        ),
+      retry: (id: string) =>
+        request<RetryEmbeddingJobResponse>(
+          http,
+          'post',
+          `/settings/embedding-jobs/${id}/retry`,
+        ),
+    },
+    knowledgeChat: {
+      listSessions: () =>
+        request<KnowledgeChatSessionDto[]>(http, 'get', '/knowledge-chat/sessions'),
+      getSession: (id: string) =>
+        request<KnowledgeChatSessionDto>(http, 'get', `/knowledge-chat/sessions/${id}`),
+      updateSession: (id: string, payload: UpdateKnowledgeChatSessionRequest) =>
+        request<KnowledgeChatSessionDto>(
+          http,
+          'patch',
+          `/knowledge-chat/sessions/${id}`,
+          payload,
+        ),
+      deleteSession: (id: string) =>
+        request<{ id: string }>(http, 'delete', `/knowledge-chat/sessions/${id}`),
+      askNewSession: (
+        payload: CreateKnowledgeChatRequest,
+        onEvent: (event: LumiSseEvent) => void,
+        signal?: AbortSignal,
+      ) =>
+        streamSseRequest(
+          options.baseUrl.replace(/\/$/, ''),
+          options.getToken?.(),
+          '/knowledge-chat/sessions/ask',
+          payload,
+          onEvent,
+          signal,
+        ),
+      askInSession: (
+        id: string,
+        payload: CreateKnowledgeChatRequest,
+        onEvent: (event: LumiSseEvent) => void,
+        signal?: AbortSignal,
+      ) =>
+        streamSseRequest(
+          options.baseUrl.replace(/\/$/, ''),
+          options.getToken?.(),
+          `/knowledge-chat/sessions/${id}/messages`,
+          payload,
+          onEvent,
+          signal,
+        ),
+      regenerate: (
+        messageId: string,
+        onEvent: (event: LumiSseEvent) => void,
+        signal?: AbortSignal,
+      ) =>
+        streamSseRequest(
+          options.baseUrl.replace(/\/$/, ''),
+          options.getToken?.(),
+          `/knowledge-chat/messages/${messageId}/regenerate`,
+          {},
+          onEvent,
+          signal,
+        ),
     },
     documents: {
       list: (params: ListDocumentsParams = {}) =>
@@ -152,9 +246,14 @@ export function createLumiClient(options: LumiClientOptions) {
   };
 }
 
+export type LumiSseEvent = {
+  event: string;
+  data: unknown;
+};
+
 async function request<T>(
   http: AxiosInstance,
-  method: 'get' | 'post' | 'patch' | 'delete',
+  method: 'get' | 'post' | 'put' | 'patch' | 'delete',
   url: string,
   data?: unknown,
   config?: Record<string, unknown>,
@@ -198,6 +297,77 @@ async function request<T>(
       message: axiosError.message || '请求失败',
       status: response?.status,
     });
+  }
+}
+
+async function streamSseRequest(
+  baseUrl: string,
+  token: string | null | undefined,
+  url: string,
+  data: unknown,
+  onEvent: (event: LumiSseEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${baseUrl}${url}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(data),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new LumiApiError({
+      code: response.status,
+      message: await response.text(),
+      status: response.status,
+    });
+  }
+
+  if (!response.body) return;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split(/\n\n/);
+    buffer = events.pop() || '';
+    for (const rawEvent of events) {
+      const parsed = parseSseEvent(rawEvent);
+      if (parsed) onEvent(parsed);
+    }
+  }
+
+  const parsed = parseSseEvent(buffer);
+  if (parsed) onEvent(parsed);
+}
+
+function parseSseEvent(raw: string): LumiSseEvent | null {
+  const lines = raw.split(/\n/);
+  let event = 'message';
+  const dataLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith('event:')) {
+      event = line.slice(6).trim() || 'message';
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+
+  if (!dataLines.length) return null;
+  const rawData = dataLines.join('\n');
+  try {
+    return { event, data: JSON.parse(rawData) };
+  } catch {
+    return { event, data: rawData };
   }
 }
 

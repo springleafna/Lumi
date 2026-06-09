@@ -5,6 +5,8 @@ import type { RedisOptions } from 'ioredis';
 import {
   AI_ANALYSIS_QUEUE,
   AI_ANALYSIS_QUEUE_NAME,
+  EMBEDDING_QUEUE,
+  EMBEDDING_QUEUE_NAME,
   INGEST_QUEUE,
   INGEST_QUEUE_NAME,
   REDIS_CONNECTION_OPTIONS,
@@ -12,6 +14,8 @@ import {
 import { QueueService } from './queue.service';
 import type {
   AiAnalysisQueueJobData,
+  EmbeddingQueueJobData,
+  EmbeddingQueueJobName,
   IngestQueueJobData,
   IngestQueueJobName,
 } from './queue.types';
@@ -41,6 +45,14 @@ import type {
           connection,
         }),
     },
+    {
+      provide: EMBEDDING_QUEUE,
+      inject: [REDIS_CONNECTION_OPTIONS],
+      useFactory: (connection: RedisOptions) =>
+        new Queue<EmbeddingQueueJobData, unknown, EmbeddingQueueJobName>(EMBEDDING_QUEUE_NAME, {
+          connection,
+        }),
+    },
     QueueService,
   ],
   exports: [REDIS_CONNECTION_OPTIONS, QueueService],
@@ -52,9 +64,13 @@ function parseRedisUrl(value: string): RedisOptions {
   return {
     host: url.hostname || '127.0.0.1',
     port: Number(url.port || 6379),
-    username: url.username || undefined,
-    password: url.password || undefined,
+    username: decodeRedisCredential(url.username),
+    password: decodeRedisCredential(url.password),
     db: url.pathname ? Number(url.pathname.replace('/', '') || 0) : 0,
     maxRetriesPerRequest: null,
   };
+}
+
+function decodeRedisCredential(value: string): string | undefined {
+  return value ? decodeURIComponent(value) : undefined;
 }

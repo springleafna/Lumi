@@ -14,6 +14,8 @@ import {
   parseMarkdownDocument,
   parseTextDocument,
 } from '@lumi/parser';
+import { AiProviderService } from '../ai/ai-provider.service';
+import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
 import { toDocumentDetail, toIngestJobDto } from '../documents/document.mapper';
@@ -34,6 +36,8 @@ export class IngestService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queueService: QueueService,
+    private readonly aiProviderService: AiProviderService,
+    private readonly embeddingsService: EmbeddingsService,
   ) {}
 
   async ingestUrl(
@@ -101,6 +105,7 @@ export class IngestService {
       });
 
       await this.enqueueAiAnalysisBestEffort(userId, document.id);
+      await this.embeddingsService.enqueueDocumentIndexBestEffort(userId, document.id);
 
       return {
         document: toDocumentDetail(document),
@@ -175,6 +180,8 @@ export class IngestService {
           finishedAt: new Date(),
         },
       });
+
+      await this.embeddingsService.enqueueDocumentIndexBestEffort(userId, document.id);
 
       return {
         document: toDocumentDetail(document),
@@ -361,6 +368,7 @@ export class IngestService {
 
   private async enqueueAiAnalysisBestEffort(userId: string, documentId: string) {
     try {
+      await this.aiProviderService.getChatConfig();
       await this.prisma.aiAnalysis.upsert({
         where: { documentId },
         update: {
@@ -375,21 +383,9 @@ export class IngestService {
       });
       await this.queueService.addAiAnalysisJob({ userId, documentId });
     } catch (error) {
-      await this.prisma.aiAnalysis.upsert({
-        where: { documentId },
-        update: {
-          status: 'failed',
-          errorMessage: getErrorMessage(error),
-          finishedAt: new Date(),
-        },
-        create: {
-          userId,
-          documentId,
-          status: 'failed',
-          errorMessage: getErrorMessage(error),
-          finishedAt: new Date(),
-        },
-      });
+      if (getErrorMessage(error).includes('请先配置 AI')) {
+        return;
+      }
     }
   }
 }

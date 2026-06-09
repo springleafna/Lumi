@@ -3,10 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import type { Queue, JobsOptions } from 'bullmq';
 import {
   AI_ANALYSIS_QUEUE,
+  EMBEDDING_QUEUE,
   INGEST_QUEUE,
 } from './queue.constants';
 import type {
   AiAnalysisQueueJobData,
+  EmbeddingQueueJobData,
+  EmbeddingQueueJobName,
   IngestQueueJobData,
   IngestQueueJobName,
 } from './queue.types';
@@ -19,6 +22,8 @@ export class QueueService implements OnModuleDestroy {
     private readonly ingestQueue: Queue<IngestQueueJobData, unknown, IngestQueueJobName>,
     @Inject(AI_ANALYSIS_QUEUE)
     private readonly aiAnalysisQueue: Queue<AiAnalysisQueueJobData>,
+    @Inject(EMBEDDING_QUEUE)
+    private readonly embeddingQueue: Queue<EmbeddingQueueJobData, unknown, EmbeddingQueueJobName>,
   ) {}
 
   async addIngestJob(name: IngestQueueJobName, data: IngestQueueJobData) {
@@ -39,8 +44,21 @@ export class QueueService implements OnModuleDestroy {
     });
   }
 
+  async addEmbeddingJob(data: EmbeddingQueueJobData) {
+    return this.embeddingQueue.add('embedding:index-document', data, {
+      attempts: this.getNumber('EMBEDDING_JOB_ATTEMPTS', 2),
+      backoff: this.backoff(),
+      removeOnComplete: 100,
+      removeOnFail: 500,
+    });
+  }
+
   async onModuleDestroy() {
-    await Promise.all([this.ingestQueue.close(), this.aiAnalysisQueue.close()]);
+    await Promise.all([
+      this.ingestQueue.close(),
+      this.aiAnalysisQueue.close(),
+      this.embeddingQueue.close(),
+    ]);
   }
 
   private backoff(): JobsOptions['backoff'] {

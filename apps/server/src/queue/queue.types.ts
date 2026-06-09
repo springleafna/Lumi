@@ -10,3 +10,9 @@ export type AiAnalysisQueueJobData = {
   documentId: string;
   userId: string;
 };
+
+export type EmbeddingQueueJobName = 'embedding:index-document';
+
+export type EmbeddingQueueJobData = {
+  jobId: string;
+};

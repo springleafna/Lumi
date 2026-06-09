@@ -2,6 +2,7 @@
 import {
   Archive,
   ArchiveRestore,
+  Bot,
   ExternalLink,
   FileText,
   Globe2,
@@ -10,6 +11,7 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  Settings,
   Star,
   Tag,
   Trash2,
@@ -544,6 +546,24 @@ function getErrorMessage(error: unknown, fallback: string) {
           </div>
           <span>Lumi</span>
         </div>
+      </section>
+
+      <section class="sidebar-section">
+        <div class="sidebar-title">导航</div>
+        <nav class="sidebar-nav">
+          <button class="sidebar-link active" type="button">
+            <FileText class="sidebar-link-icon" />
+            <span>文章库</span>
+          </button>
+          <button class="sidebar-link" type="button" @click="router.push('/knowledge-chat')">
+            <Bot class="sidebar-link-icon" />
+            <span>知识库问答</span>
+          </button>
+          <button class="sidebar-link" type="button" @click="router.push('/settings')">
+            <Settings class="sidebar-link-icon" />
+            <span>设置</span>
+          </button>
+        </nav>
       </section>
 
       <section class="sidebar-section">

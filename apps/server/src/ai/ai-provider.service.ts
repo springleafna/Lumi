@@ -1,46 +1,37 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { BadRequestException, forwardRef, Inject, Injectable } from '@nestjs/common';
+import type { RuntimeAiConfig } from '../settings/settings.service';
+import { SettingsService } from '../settings/settings.service';
 
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
 };
 
-export type AiProviderConfig = {
-  provider: string;
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-};
-
 @Injectable()
 export class AiProviderService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    @Inject(forwardRef(() => SettingsService))
+    private readonly settingsService: SettingsService,
+  ) {}
 
-  getConfig(): AiProviderConfig {
-    const provider = (this.configService.get<string>('AI_PROVIDER') || 'deepseek').toLowerCase();
-    if (provider === 'siliconflow') {
-      return this.buildConfig({
-        provider,
-        apiKey: 'SILICONFLOW_API_KEY',
-        baseUrl: 'SILICONFLOW_BASE_URL',
-        model: 'SILICONFLOW_MODEL',
-        fallbackBaseUrl: 'https://api.siliconflow.cn/v1',
-      });
-    }
+  async getChatConfig(): Promise<RuntimeAiConfig> {
+    return this.settingsService.getChatRuntimeConfig();
+  }
 
-    return this.buildConfig({
-      provider: 'deepseek',
-      apiKey: 'DEEPSEEK_API_KEY',
-      baseUrl: 'DEEPSEEK_BASE_URL',
-      model: 'DEEPSEEK_MODEL',
-      fallbackBaseUrl: 'https://api.deepseek.com',
-      fallbackModel: 'deepseek-chat',
-    });
+  async getEmbeddingConfig(): Promise<RuntimeAiConfig> {
+    return this.settingsService.getEmbeddingRuntimeConfig();
   }
 
   async chatJson(messages: ChatMessage[], temperature = 0.2): Promise<string> {
-    const config = this.getConfig();
+    const config = await this.getChatConfig();
+    return this.chatJsonWithConfig(config, messages, temperature);
+  }
+
+  async chatJsonWithConfig(
+    config: RuntimeAiConfig,
+    messages: ChatMessage[],
+    temperature = 0.2,
+  ): Promise<string> {
     const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -69,8 +60,21 @@ export class AiProviderService {
     return content;
   }
 
-  async *streamChat(messages: ChatMessage[], temperature = 0.2): AsyncIterable<string> {
-    const config = this.getConfig();
+  async *streamChat(
+    messages: ChatMessage[],
+    temperature = 0.2,
+    signal?: AbortSignal,
+  ): AsyncIterable<string> {
+    const config = await this.getChatConfig();
+    yield* this.streamChatWithConfig(config, messages, temperature, signal);
+  }
+
+  async *streamChatWithConfig(
+    config: RuntimeAiConfig,
+    messages: ChatMessage[],
+    temperature = 0.2,
+    signal?: AbortSignal,
+  ): AsyncIterable<string> {
     const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -83,6 +87,7 @@ export class AiProviderService {
         temperature,
         stream: true,
       }),
+      signal,
     });
 
     if (!response.ok || !response.body) {
@@ -119,29 +124,70 @@ export class AiProviderService {
     }
   }
 
-  private buildConfig(input: {
-    provider: string;
-    apiKey: string;
-    baseUrl: string;
-    model: string;
-    fallbackBaseUrl: string;
-    fallbackModel?: string;
-  }): AiProviderConfig {
-    const apiKey = this.configService.get<string>(input.apiKey);
-    const model = this.configService.get<string>(input.model) || input.fallbackModel;
-    if (!apiKey) {
-      throw new BadRequestException(`请先配置 ${input.apiKey}`);
-    }
-    if (!model) {
-      throw new BadRequestException(`请先配置 ${input.model}`);
+  async embedTexts(texts: string[]): Promise<{
+    config: RuntimeAiConfig;
+    vectors: number[][];
+    dimension: number;
+  }> {
+    const config = await this.settingsService.getEmbeddingRuntimeConfig();
+    const result = await this.embedTextsWithConfig(config, texts);
+    await this.settingsService.updateEmbeddingDimension(result.dimension);
+    return { config, ...result };
+  }
+
+  async embedTextsWithConfig(
+    config: RuntimeAiConfig,
+    texts: string[],
+  ): Promise<{ vectors: number[][]; dimension: number }> {
+    const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/embeddings`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: config.model,
+        input: texts,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new BadRequestException(`Embedding 调用失败：${await readResponseText(response)}`);
     }
 
-    return {
-      provider: input.provider,
-      apiKey,
-      model,
-      baseUrl: this.configService.get<string>(input.baseUrl) || input.fallbackBaseUrl,
+    const data = (await response.json()) as {
+      data?: Array<{ embedding?: number[] }>;
     };
+    const vectors = (data.data || [])
+      .map((item) => item.embedding)
+      .filter((item): item is number[] => Array.isArray(item));
+
+    if (vectors.length !== texts.length || !vectors[0]?.length) {
+      throw new BadRequestException('Embedding 返回内容不完整');
+    }
+
+    const dimension = vectors[0].length;
+    if (vectors.some((vector) => vector.length !== dimension)) {
+      throw new BadRequestException('Embedding 返回向量维度不一致');
+    }
+
+    return { vectors, dimension };
+  }
+
+  async testChatConfig(config: RuntimeAiConfig): Promise<void> {
+    await this.chatJsonWithConfig(
+      config,
+      [
+        { role: 'system', content: '你是 Lumi 的连接测试助手。必须只输出 JSON。' },
+        { role: 'user', content: '请输出 {"ok":true}' },
+      ],
+      0,
+    );
+  }
+
+  async testEmbeddingConfig(config: RuntimeAiConfig): Promise<number> {
+    const result = await this.embedTextsWithConfig(config, ['Lumi 连接测试']);
+    return result.dimension;
   }
 }
 

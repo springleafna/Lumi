@@ -20,6 +20,10 @@ model User {
   aiAnalyses      AiAnalysis[]
   aiConversations AiConversation[]
   annotations     Annotation[]
+  embeddingJobs   DocumentEmbeddingJob[]
+  embeddingChunks DocumentEmbeddingChunk[]
+  knowledgeChatSessions KnowledgeChatSession[]
+  knowledgeChatMessages KnowledgeChatMessage[]
 }
 
 model Document {
@@ -51,6 +55,9 @@ model Document {
   aiAnalysis      AiAnalysis?
   aiConversations AiConversation[]
   annotations     Annotation[]
+  embeddingJobs   DocumentEmbeddingJob[]
+  embeddingChunks DocumentEmbeddingChunk[]
+  knowledgeChatCitations KnowledgeChatCitation[]
 
   @@index([userId, ingestStatus])
   @@index([userId, url])
@@ -172,6 +179,159 @@ model Annotation {
   @@index([userId])
 }
 
+model AiSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique @default("global")
+
+  chatProviderPreset String?
+  chatBaseUrl        String?
+  chatModel          String?
+  chatApiKeyCipher   String?
+  chatApiKeyIv       String?
+  chatApiKeyTag      String?
+  chatLastTestStatus AiProviderTestStatus?
+  chatLastTestError  String?
+  chatLastTestedAt   DateTime?
+
+  embeddingProviderPreset String?
+  embeddingBaseUrl        String?
+  embeddingModel          String?
+  embeddingApiKeyCipher   String?
+  embeddingApiKeyIv       String?
+  embeddingApiKeyTag      String?
+  embeddingDimension      Int?
+  embeddingLastTestStatus AiProviderTestStatus?
+  embeddingLastTestError  String?
+  embeddingLastTestedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DocumentEmbeddingJob {
+  id           String                  @id @default(cuid())
+  status       DocumentEmbeddingStatus @default(pending)
+  errorMessage String?
+
+  provider          String?
+  model             String?
+  dimension         Int?
+  configFingerprint String?
+  chunkCount        Int @default(0)
+
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  chunks DocumentEmbeddingChunk[]
+
+  @@index([userId, status, createdAt])
+  @@index([documentId, createdAt])
+  @@index([configFingerprint])
+}
+
+model DocumentEmbeddingChunk {
+  id          String @id @default(cuid())
+  chunkIndex  Int
+  content     String
+  contentHash String?
+  startOffset Int
+  endOffset   Int
+
+  provider          String
+  model             String
+  dimension         Int
+  configFingerprint String
+  embedding         Unsupported("vector")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  jobId      String?
+  job        DocumentEmbeddingJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  userId     String
+  user       User @relation(fields: [userId], references: [id])
+
+  citations KnowledgeChatCitation[]
+
+  @@index([userId, configFingerprint])
+  @@index([documentId, configFingerprint])
+}
+
+model KnowledgeChatSession {
+  id        String   @id @default(cuid())
+  title     String   @default("新的问答")
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User @relation(fields: [userId], references: [id])
+
+  messages KnowledgeChatMessage[]
+
+  @@index([userId, deletedAt, updatedAt])
+}
+
+model KnowledgeChatMessage {
+  id           String                     @id @default(cuid())
+  question     String
+  answer       String?
+  status       KnowledgeChatMessageStatus @default(processing)
+  provider     String?
+  model        String?
+  errorMessage String?
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+  finishedAt   DateTime?
+
+  sessionId String
+  session   KnowledgeChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id])
+
+  citations KnowledgeChatCitation[]
+
+  @@index([sessionId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model KnowledgeChatCitation {
+  id            String @id @default(cuid())
+  citationIndex Int
+  excerpt       String
+  score         Float?
+  startOffset   Int?
+  endOffset     Int?
+
+  documentTitleSnapshot      String
+  documentSourceSnapshot     String?
+  documentArchivedAtSnapshot DateTime?
+  documentCreatedAtSnapshot  DateTime?
+
+  createdAt DateTime @default(now())
+
+  messageId String
+  message   KnowledgeChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  documentId String?
+  document   Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  chunkId String?
+  chunk   DocumentEmbeddingChunk? @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+
+  @@index([messageId, citationIndex])
+  @@index([documentId])
+}
+
 enum DocumentType {
   article
   video
@@ -217,4 +377,23 @@ enum AiConversationStatus {
   processing
   succeeded
   failed
+}
+
+enum AiProviderTestStatus {
+  succeeded
+  failed
+}
+
+enum DocumentEmbeddingStatus {
+  pending
+  processing
+  succeeded
+  failed
+}
+
+enum KnowledgeChatMessageStatus {
+  processing
+  succeeded
+  failed
+  aborted
 }

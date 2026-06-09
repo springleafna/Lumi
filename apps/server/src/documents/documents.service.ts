@@ -4,6 +4,7 @@ import type {
   AnnotationDto,
   CreateAnnotationRequest,
   DocumentFacets,
+  DocumentDetail,
   DocumentReadingStatus,
   DocumentSort,
   DocumentStatus,
@@ -12,8 +13,10 @@ import type {
   PageResult,
   UpdateAnnotationRequest,
 } from '@lumi/shared';
+import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  type DocumentWithTags,
   toAnnotationDto,
   toDocumentDetail,
   toDocumentSummary,
@@ -35,7 +38,10 @@ const documentInclude = {
 
 @Injectable()
 export class DocumentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly embeddingsService: EmbeddingsService,
+  ) {}
 
   async list(
     userId: string,
@@ -118,7 +124,7 @@ export class DocumentsService {
 
   async get(userId: string, id: string) {
     const document = await this.findOwnedDocument(userId, id);
-    return toDocumentDetail(document);
+    return this.toDocumentDetailWithEmbeddingStatus(userId, document);
   }
 
   async archive(userId: string, id: string) {
@@ -128,7 +134,7 @@ export class DocumentsService {
       data: { archivedAt: new Date() },
       include: documentInclude,
     });
-    return toDocumentDetail(document);
+    return this.toDocumentDetailWithEmbeddingStatus(userId, document);
   }
 
   async unarchive(userId: string, id: string) {
@@ -138,7 +144,7 @@ export class DocumentsService {
       data: { archivedAt: null },
       include: documentInclude,
     });
-    return toDocumentDetail(document);
+    return this.toDocumentDetailWithEmbeddingStatus(userId, document);
   }
 
   async restore(userId: string, id: string) {
@@ -148,7 +154,7 @@ export class DocumentsService {
       data: { deletedAt: null },
       include: documentInclude,
     });
-    return toDocumentDetail(document);
+    return this.toDocumentDetailWithEmbeddingStatus(userId, document);
   }
 
   async softDelete(userId: string, id: string) {
@@ -175,7 +181,7 @@ export class DocumentsService {
       data: { readingStatus },
       include: documentInclude,
     });
-    return toDocumentDetail(document);
+    return this.toDocumentDetailWithEmbeddingStatus(userId, document);
   }
 
   async updateFavorite(userId: string, id: string, favorite: boolean) {
@@ -185,7 +191,7 @@ export class DocumentsService {
       data: { favoritedAt: favorite ? new Date() : null },
       include: documentInclude,
     });
-    return toDocumentDetail(document);
+    return this.toDocumentDetailWithEmbeddingStatus(userId, document);
   }
 
   async listAnnotations(userId: string, documentId: string): Promise<AnnotationDto[]> {
@@ -412,6 +418,23 @@ export class DocumentsService {
       throw new NotFoundException('文章不存在');
     }
     return document;
+  }
+
+  private async toDocumentDetailWithEmbeddingStatus(
+    userId: string,
+    document: DocumentWithTags,
+  ): Promise<DocumentDetail> {
+    const detail = toDocumentDetail(document);
+    const indexStatus = await this.embeddingsService.getDocumentIndexStatus(
+      userId,
+      document.id,
+    );
+    return {
+      ...detail,
+      embeddingIndexStatus: indexStatus.status,
+      embeddingIndexErrorMessage: indexStatus.errorMessage,
+      embeddingIndexedAt: indexStatus.indexedAt,
+    };
   }
 
   private async ensureOwnedDocument(
