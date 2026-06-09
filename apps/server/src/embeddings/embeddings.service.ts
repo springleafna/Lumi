@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
+  DocumentEmbeddingChunkDto,
   DocumentEmbeddingIndexStatus,
+  DocumentEmbeddingJobChunksDto,
   DocumentEmbeddingJobDto,
   ListEmbeddingJobsParams,
   PageResult,
@@ -205,6 +207,50 @@ export class EmbeddingsService {
       page,
       pageSize,
       total,
+    };
+  }
+
+  async getJobChunks(userId: string, id: string): Promise<DocumentEmbeddingJobChunksDto> {
+    const job = await this.prisma.documentEmbeddingJob.findFirst({
+      where: { id, userId },
+      include: {
+        document: {
+          select: {
+            title: true,
+            type: true,
+          },
+        },
+        chunks: {
+          select: {
+            id: true,
+            chunkIndex: true,
+            content: true,
+            contentHash: true,
+            startOffset: true,
+            endOffset: true,
+            provider: true,
+            model: true,
+            dimension: true,
+            configFingerprint: true,
+            documentId: true,
+            jobId: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: { chunkIndex: 'asc' },
+        },
+      },
+    });
+    if (!job) {
+      throw new NotFoundException('索引任务不存在');
+    }
+    if (job.status !== 'succeeded') {
+      throw new BadRequestException('只有成功的索引任务可查看分片');
+    }
+
+    return {
+      job: toEmbeddingJobDto(job),
+      chunks: job.chunks.map(toEmbeddingChunkDto),
     };
   }
 
@@ -521,6 +567,40 @@ function toEmbeddingJobDto(
     updatedAt: job.updatedAt.toISOString(),
     startedAt: job.startedAt?.toISOString() ?? null,
     finishedAt: job.finishedAt?.toISOString() ?? null,
+  };
+}
+
+function toEmbeddingChunkDto(chunk: {
+  id: string;
+  chunkIndex: number;
+  content: string;
+  contentHash: string | null;
+  startOffset: number;
+  endOffset: number;
+  provider: string;
+  model: string;
+  dimension: number;
+  configFingerprint: string;
+  documentId: string;
+  jobId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): DocumentEmbeddingChunkDto {
+  return {
+    id: chunk.id,
+    chunkIndex: chunk.chunkIndex,
+    content: chunk.content,
+    contentHash: chunk.contentHash,
+    startOffset: chunk.startOffset,
+    endOffset: chunk.endOffset,
+    provider: chunk.provider,
+    model: chunk.model,
+    dimension: chunk.dimension,
+    configFingerprint: chunk.configFingerprint,
+    documentId: chunk.documentId,
+    jobId: chunk.jobId,
+    createdAt: chunk.createdAt.toISOString(),
+    updatedAt: chunk.updatedAt.toISOString(),
   };
 }
 

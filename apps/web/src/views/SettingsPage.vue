@@ -6,6 +6,7 @@ import {
   KeyRound,
   LoaderCircle,
   RefreshCw,
+  Rows3,
   Search,
   Settings as SettingsIcon,
   Trash2,
@@ -16,6 +17,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
 import type {
   AiSettingsDto,
+  DocumentEmbeddingChunkDto,
+  DocumentEmbeddingJobChunksDto,
   DocumentEmbeddingJobDto,
   DocumentEmbeddingStatus,
   UpdateAiProviderConfigRequest,
@@ -23,6 +26,7 @@ import type {
 import UiBadge from '../components/ui/Badge.vue'
 import UiButton from '../components/ui/Button.vue'
 import UiCard from '../components/ui/Card.vue'
+import UiDialog from '../components/ui/Dialog.vue'
 import UiInput from '../components/ui/Input.vue'
 import UiSelect from '../components/ui/Select.vue'
 import UiTabs from '../components/ui/Tabs.vue'
@@ -90,9 +94,25 @@ const jobsLoading = ref(false)
 const jobsStatus = ref('')
 const jobsKeyword = ref('')
 const jobsPage = ref(1)
+const chunkDialogOpen = ref(false)
+const selectedJob = ref<DocumentEmbeddingJobDto | null>(null)
+const jobChunks = ref<DocumentEmbeddingJobChunksDto | null>(null)
+const jobChunksLoading = ref(false)
 
 const chatConfigured = computed(() => aiSettings.value?.chat.configured)
 const embeddingConfigured = computed(() => aiSettings.value?.embedding.configured)
+const chunkDialogTitle = computed(() =>
+  selectedJob.value ? `索引分片：${selectedJob.value.documentTitle}` : '索引分片',
+)
+const chunkDialogDescription = computed(() => {
+  if (!selectedJob.value) return undefined
+  const parts = [
+    selectedJob.value.model || '未记录模型',
+    `${selectedJob.value.chunkCount} 个片段`,
+    selectedJob.value.finishedAt ? `完成于 ${formatDate(selectedJob.value.finishedAt)}` : null,
+  ].filter(Boolean)
+  return parts.join(' · ')
+})
 
 onMounted(async () => {
   await Promise.all([loadAiSettings(), loadJobs()])
@@ -261,6 +281,37 @@ async function retryJob(job: DocumentEmbeddingJobDto) {
   })
 }
 
+async function openJobChunks(job: DocumentEmbeddingJobDto) {
+  if (job.status !== 'succeeded') return
+  if (jobChunksLoading.value && selectedJob.value?.id === job.id) return
+  selectedJob.value = job
+  jobChunks.value = null
+  chunkDialogOpen.value = true
+  jobChunksLoading.value = true
+  try {
+    jobChunks.value = await client.embeddingJobs.chunks(job.id)
+  } catch (error) {
+    notifyError(error, '索引分片加载失败')
+  } finally {
+    jobChunksLoading.value = false
+  }
+}
+
+function updateChunkDialogOpen(value: boolean) {
+  chunkDialogOpen.value = value
+  if (!value) {
+    selectedJob.value = null
+    jobChunks.value = null
+  }
+}
+
+function handleJobRowKeydown(event: KeyboardEvent, job: DocumentEmbeddingJobDto) {
+  if (job.status !== 'succeeded') return
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  openJobChunks(job)
+}
+
 async function applyJobFilters() {
   jobsPage.value = 1
   await loadJobs()
@@ -298,6 +349,10 @@ function formatDate(value?: string | null) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+function formatChunkMeta(chunk: DocumentEmbeddingChunkDto) {
+  return `${chunk.content.length} 字符 · ${chunk.startOffset}-${chunk.endOffset}`
 }
 
 function notifyError(error: unknown, fallback: string) {
@@ -519,7 +574,17 @@ function notifyError(error: unknown, fallback: string) {
               <SettingsIcon :size="24" />
               <p>暂无索引任务</p>
             </div>
-            <article v-for="job in jobs" v-else :key="job.id" class="job-row">
+            <article
+              v-for="job in jobs"
+              v-else
+              :key="job.id"
+              class="job-row"
+              :class="{ 'is-clickable': job.status === 'succeeded' }"
+              :tabindex="job.status === 'succeeded' ? 0 : undefined"
+              :role="job.status === 'succeeded' ? 'button' : undefined"
+              @click="openJobChunks(job)"
+              @keydown="handleJobRowKeydown($event, job)"
+            >
               <div class="job-main">
                 <div class="job-title-line">
                   <h3>{{ job.documentTitle }}</h3>
@@ -535,6 +600,13 @@ function notifyError(error: unknown, fallback: string) {
               </div>
               <div class="job-actions">
                 <CheckCircle2 v-if="job.status === 'succeeded'" :size="18" />
+                <span
+                  v-if="job.status === 'succeeded'"
+                  class="job-view-hint"
+                >
+                  <Rows3 :size="14" />
+                  {{ jobChunksLoading && selectedJob?.id === job.id ? '加载中' : '查看分片' }}
+                </span>
                 <UiButton
                   v-if="job.status === 'failed'"
                   variant="secondary"
@@ -573,5 +645,49 @@ function notifyError(error: unknown, fallback: string) {
         </section>
       </main>
     </div>
+
+    <UiDialog
+      :open="chunkDialogOpen"
+      :title="chunkDialogTitle"
+      :description="chunkDialogDescription"
+      panel-class="embedding-chunks-dialog-panel"
+      @update:open="updateChunkDialogOpen"
+    >
+      <div v-if="jobChunksLoading" class="settings-loading embedding-chunks-loading">
+        <LoaderCircle :size="18" />
+        正在加载分片内容...
+      </div>
+      <div v-else-if="jobChunks?.chunks.length" class="embedding-chunks-dialog">
+        <div class="embedding-chunks-summary">
+          <UiBadge variant="success">成功</UiBadge>
+          <span>
+            {{ jobChunks.chunks.length }} / {{ jobChunks.job.chunkCount }} 个分片
+          </span>
+          <span v-if="jobChunks.job.dimension">{{ jobChunks.job.dimension }} 维</span>
+        </div>
+
+        <div class="embedding-chunk-list">
+          <article
+            v-for="chunk in jobChunks.chunks"
+            :key="chunk.id"
+            class="embedding-chunk-item"
+          >
+            <div class="embedding-chunk-header">
+              <h3>分片 #{{ chunk.chunkIndex + 1 }}</h3>
+              <span>{{ formatChunkMeta(chunk) }}</span>
+            </div>
+            <pre>{{ chunk.content }}</pre>
+          </article>
+        </div>
+      </div>
+      <div v-else class="settings-empty embedding-chunks-empty">
+        <Rows3 :size="24" />
+        <p>暂无分片内容</p>
+      </div>
+
+      <template #footer>
+        <UiButton variant="secondary" @click="updateChunkDialogOpen(false)">关闭</UiButton>
+      </template>
+    </UiDialog>
   </main>
 </template>

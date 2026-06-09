@@ -25,6 +25,11 @@ export class EmbeddingsController {
     });
   }
 
+  @Get(':id/chunks')
+  getJobChunks(@CurrentUser() user: UserDto, @Param('id') id: string) {
+    return this.embeddingsService.getJobChunks(user.id, id);
+  }
+
   @Post(':id/retry')
   retryJob(@CurrentUser() user: UserDto, @Param('id') id: string) {
     return this.embeddingsService.retryJob(user.id, id);

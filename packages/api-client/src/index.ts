@@ -11,6 +11,7 @@ import type {
   CreateAiConversationRequest,
   CreateKnowledgeChatRequest,
   DocumentDetail,
+  DocumentEmbeddingJobChunksDto,
   DocumentEmbeddingJobDto,
   DocumentFacets,
   DocumentSummary,
@@ -120,6 +121,12 @@ export function createLumiClient(options: LumiClientOptions) {
           http,
           'post',
           `/settings/embedding-jobs/${id}/retry`,
+        ),
+      chunks: (id: string) =>
+        request<DocumentEmbeddingJobChunksDto>(
+          http,
+          'get',
+          `/settings/embedding-jobs/${id}/chunks`,
         ),
     },
     knowledgeChat: {

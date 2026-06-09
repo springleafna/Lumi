@@ -6,6 +6,7 @@ defineProps<{
   open: boolean
   title: string
   description?: string
+  panelClass?: string
 }>()
 
 const emit = defineEmits<{
@@ -21,7 +22,7 @@ function close() {
   <Teleport to="body">
     <Transition name="dialog-fade">
       <div v-if="open" class="ui-dialog-backdrop" @click.self="close">
-        <section class="ui-dialog-panel" role="dialog" aria-modal="true">
+        <section class="ui-dialog-panel" :class="panelClass" role="dialog" aria-modal="true">
           <UiButton class="ui-dialog-close" variant="ghost" size="icon" title="关闭" @click="close">
             <X :size="17" />
           </UiButton>

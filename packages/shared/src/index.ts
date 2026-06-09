@@ -296,6 +296,28 @@ export type DocumentEmbeddingJobDto = {
   finishedAt?: string | null;
 };
 
+export type DocumentEmbeddingChunkDto = {
+  id: string;
+  chunkIndex: number;
+  content: string;
+  contentHash?: string | null;
+  startOffset: number;
+  endOffset: number;
+  provider: string;
+  model: string;
+  dimension: number;
+  configFingerprint: string;
+  documentId: string;
+  jobId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DocumentEmbeddingJobChunksDto = {
+  job: DocumentEmbeddingJobDto;
+  chunks: DocumentEmbeddingChunkDto[];
+};
+
 export type RetryEmbeddingJobResponse = {
   job: DocumentEmbeddingJobDto;
 };
