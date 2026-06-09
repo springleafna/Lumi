@@ -701,7 +701,7 @@ a {
 }
 
 .sidebar-filter-list {
-  max-height: 148px;
+  max-height: 110px;
   overflow-y: auto;
   padding-right: var(--space-1);
 }
@@ -1815,6 +1815,8 @@ a {
 }
 
 .knowledge-content {
+  min-height: 0;
+  overflow: hidden;
   padding-bottom: var(--space-5);
 }
 
@@ -1824,6 +1826,8 @@ a {
   flex: 1;
   flex-direction: column;
   gap: var(--space-4);
+  overflow-y: auto;
+  padding-right: var(--space-1);
 }
 
 .knowledge-chat-titlebar {
@@ -1858,10 +1862,12 @@ a {
 
 .knowledge-message-list {
   display: grid;
+  align-content: start;
   gap: var(--space-5);
   max-width: 860px;
   width: 100%;
   margin: 0 auto;
+  padding-bottom: var(--space-2);
 }
 
 .knowledge-message {
@@ -1891,6 +1897,7 @@ a {
   background: var(--fg-primary);
   font-size: var(--text-sm);
   line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
@@ -1921,7 +1928,55 @@ a {
   color: var(--fg-secondary);
   font-size: var(--text-sm);
   line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.knowledge-answer-markdown.markdown-reader {
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
+}
+
+.knowledge-answer-markdown.markdown-reader > :first-child {
+  margin-top: 0;
+}
+
+.knowledge-answer-markdown.markdown-reader > :last-child {
+  margin-bottom: 0;
+}
+
+.knowledge-answer-markdown.markdown-reader h1,
+.knowledge-answer-markdown.markdown-reader h2,
+.knowledge-answer-markdown.markdown-reader h3,
+.knowledge-answer-markdown.markdown-reader h4 {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-base);
+  line-height: var(--leading-tight);
+}
+
+.knowledge-answer-markdown.markdown-reader p,
+.knowledge-answer-markdown.markdown-reader ul,
+.knowledge-answer-markdown.markdown-reader ol,
+.knowledge-answer-markdown.markdown-reader blockquote,
+.knowledge-answer-markdown.markdown-reader pre,
+.knowledge-answer-markdown.markdown-reader table {
+  margin: var(--space-3) 0;
+}
+
+.knowledge-answer-markdown.markdown-reader blockquote {
+  padding: var(--space-3) var(--space-4);
+}
+
+.knowledge-answer-markdown.markdown-reader pre {
+  max-width: 100%;
+  padding: var(--space-3);
+}
+
+.knowledge-answer-markdown.markdown-reader table {
+  display: block;
+  overflow-x: auto;
 }
 
 .knowledge-citation-list {
@@ -1972,6 +2027,7 @@ a {
   color: var(--fg-tertiary);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
@@ -1983,12 +2039,14 @@ a {
 
 .knowledge-question-form {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-3);
   max-width: 860px;
   width: 100%;
   margin: 0 auto;
   border-top: 1px solid var(--border);
+  background: var(--bg-primary);
   padding-top: var(--space-4);
 }
 

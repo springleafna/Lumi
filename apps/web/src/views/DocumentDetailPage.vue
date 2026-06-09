@@ -1165,7 +1165,10 @@ function getErrorMessage(error: unknown, fallback: string) {
                 <UiBadge v-if="document.aiAnalysisStatus" variant="neutral">
                   AI {{ aiStatusLabel }}
                 </UiBadge>
-                <UiBadge :variant="embeddingIndexVariant">
+                <UiBadge
+                  v-if="document.embeddingIndexStatus !== 'succeeded'"
+                  :variant="embeddingIndexVariant"
+                >
                   知识库索引 {{ embeddingIndexLabel }}
                 </UiBadge>
               </div>

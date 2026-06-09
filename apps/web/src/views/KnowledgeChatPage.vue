@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DOMPurify from 'dompurify'
 import {
   Bot,
   ExternalLink,
@@ -12,7 +13,8 @@ import {
   Square,
   Trash2,
 } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import MarkdownIt from 'markdown-it'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { LumiApiError, type LumiSseEvent } from '@lumi/api-client'
 import type {
@@ -31,6 +33,11 @@ import { client } from '../lib/client'
 
 const router = useRouter()
 const { toast } = useToast()
+const answerMarkdown = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: true,
+})
 
 const sessions = ref<KnowledgeChatSessionDto[]>([])
 const activeSession = ref<KnowledgeChatSessionDto | null>(null)
@@ -41,8 +48,10 @@ const question = ref('')
 const streaming = ref(false)
 const streamingMessageId = ref('')
 const errorMessage = ref('')
+const chatPanelRef = ref<HTMLElement | null>(null)
 let abortController: AbortController | null = null
 let abortedByUser = false
+let scrollFrame: number | undefined
 
 const messages = computed(() => activeSession.value?.messages || [])
 const hasSessions = computed(() => sessions.value.length > 0)
@@ -53,6 +62,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   abortController?.abort()
+  if (scrollFrame !== undefined) {
+    window.cancelAnimationFrame(scrollFrame)
+  }
 })
 
 async function loadSessions(options: { silent?: boolean; selectFirst?: boolean } = {}) {
@@ -84,6 +96,7 @@ async function loadSession(id: string, options: { silent?: boolean } = {}) {
   errorMessage.value = ''
   try {
     activeSession.value = await client.knowledgeChat.getSession(id)
+    scheduleScrollToBottom('auto')
   } catch (error) {
     notifyError(error, '会话加载失败')
   } finally {
@@ -108,6 +121,7 @@ async function submitQuestion() {
   streaming.value = true
   abortedByUser = false
   abortController = new AbortController()
+  scheduleScrollToBottom()
 
   try {
     if (activeSession.value?.id) {
@@ -269,12 +283,14 @@ function handleSseEvent(event: LumiSseEvent) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     })
+    scheduleScrollToBottom()
     return
   }
 
   if (event.event === 'answer_delta') {
     const payload = asRecord(event.data)
     appendAnswer(typeof payload.text === 'string' ? payload.text : '')
+    scheduleScrollToBottom('auto')
     return
   }
 
@@ -284,6 +300,7 @@ function handleSseEvent(event: LumiSseEvent) {
       : []
     if (streamingMessageId.value) {
       updateMessage(streamingMessageId.value, { citations })
+      scheduleScrollToBottom('auto')
     }
     return
   }
@@ -305,6 +322,7 @@ function handleSseEvent(event: LumiSseEvent) {
       updateMessage(streamingMessageId.value, {
         status: event.event === 'done' ? 'succeeded' : 'aborted',
       })
+      scheduleScrollToBottom('auto')
     }
     return
   }
@@ -314,7 +332,23 @@ function handleSseEvent(event: LumiSseEvent) {
     const message = typeof payload.message === 'string' ? payload.message : '知识库问答失败'
     markStreamingMessageFailed(message)
     errorMessage.value = message
+    scheduleScrollToBottom()
   }
+}
+
+function scheduleScrollToBottom(behavior: ScrollBehavior = 'smooth') {
+  if (scrollFrame !== undefined) {
+    window.cancelAnimationFrame(scrollFrame)
+  }
+
+  void nextTick(() => {
+    scrollFrame = window.requestAnimationFrame(() => {
+      scrollFrame = undefined
+      const panel = chatPanelRef.value
+      if (!panel) return
+      panel.scrollTo({ top: panel.scrollHeight, behavior })
+    })
+  })
 }
 
 function upsertMessage(message: Partial<KnowledgeChatMessageDto> & { id: string; question: string }) {
@@ -395,6 +429,11 @@ function messageStatusLabel(status: KnowledgeChatMessageDto['status']) {
   if (status === 'failed') return '失败'
   if (status === 'aborted') return '已停止'
   return '已完成'
+}
+
+function renderAnswerMarkdown(answer?: string | null) {
+  if (!answer) return ''
+  return DOMPurify.sanitize(answerMarkdown.render(answer))
 }
 
 function formatDate(value?: string | null) {
@@ -506,7 +545,6 @@ function asRecord(value: unknown): Record<string, unknown> {
     <div class="main">
       <header class="header">
         <div>
-          <p class="kicker">Knowledge Chat</p>
           <h1 class="page-title">知识库问答</h1>
         </div>
         <div class="header-spacer"></div>
@@ -523,7 +561,7 @@ function asRecord(value: unknown): Record<string, unknown> {
       </header>
 
       <main class="content knowledge-content">
-        <section class="knowledge-chat-panel">
+        <section ref="chatPanelRef" class="knowledge-chat-panel">
           <div v-if="activeSession" class="knowledge-chat-titlebar">
             <div>
               <h2>{{ activeSession.title }}</h2>
@@ -592,7 +630,12 @@ function asRecord(value: unknown): Record<string, unknown> {
                     {{ messageStatusLabel(message.status) }}
                   </UiBadge>
                 </div>
-                <p class="knowledge-answer-text">
+                <div
+                  v-if="message.answer"
+                  class="knowledge-answer-markdown markdown-reader"
+                  v-html="renderAnswerMarkdown(message.answer)"
+                ></div>
+                <p v-else class="knowledge-answer-text">
                   {{ message.answer || (message.status === 'processing' ? '正在生成...' : '暂无回答') }}
                 </p>
                 <p v-if="message.errorMessage" class="settings-error">

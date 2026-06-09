@@ -916,7 +916,7 @@ function getErrorMessage(error: unknown, fallback: string) {
               @change="selectFile"
             />
           </label>
-          <p class="field-hint">支持 .md / .txt，最大 2MB，按 UTF-8 读取。</p>
+          <p class="field-hint">支持 .md / .txt，最大 2MB。</p>
           <div class="dialog-actions">
             <UiButton variant="ghost" @click="showImportDialog = false">取消</UiButton>
             <UiButton type="submit" :disabled="importLoading || !selectedFile">

@@ -285,6 +285,7 @@ function statusLabel(status: DocumentEmbeddingStatus) {
 }
 
 function statusVariant(status: DocumentEmbeddingStatus) {
+  if (status === 'succeeded') return 'success'
   if (status === 'failed') return 'destructive'
   return 'neutral'
 }
