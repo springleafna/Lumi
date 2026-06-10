@@ -15,11 +15,8 @@ import type {
 } from '@lumi/shared';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import {
-  IngestService,
-  MAX_FILE_BYTES,
-  type UploadedTextFile,
-} from './ingest.service';
+import { IngestService, type UploadedTextFile } from './ingest.service';
+import { MAX_FILE_BYTES } from './ingest.validation';
 
 @Controller('ingest')
 @UseGuards(JwtAuthGuard)

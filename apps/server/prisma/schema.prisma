@@ -20,6 +20,7 @@ model User {
   aiAnalyses      AiAnalysis[]
   aiConversations AiConversation[]
   annotations     Annotation[]
+  mediaAssets     DocumentMediaAsset[]
   embeddingJobs   DocumentEmbeddingJob[]
   embeddingChunks DocumentEmbeddingChunk[]
   knowledgeChatSessions KnowledgeChatSession[]
@@ -55,6 +56,7 @@ model Document {
   aiAnalysis      AiAnalysis?
   aiConversations AiConversation[]
   annotations     Annotation[]
+  mediaAssets     DocumentMediaAsset[]
   embeddingJobs   DocumentEmbeddingJob[]
   embeddingChunks DocumentEmbeddingChunk[]
   knowledgeChatCitations KnowledgeChatCitation[]
@@ -177,6 +179,32 @@ model Annotation {
 
   @@index([documentId, startOffset])
   @@index([userId])
+}
+
+model DocumentMediaAsset {
+  id            String              @id @default(cuid())
+  kind          DocumentMediaKind
+  status        DocumentMediaStatus
+  reason        DocumentMediaReason?
+  originalUrl   String
+  normalizedUrl String
+  contentType   String?
+  byteSize      Int?
+  contentHash   String?
+  objectKey     String?
+  publicUrl     String?
+  errorMessage  String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@unique([documentId, kind, normalizedUrl])
+  @@index([documentId, kind])
+  @@index([userId, status])
 }
 
 model AiSetting {
@@ -364,6 +392,33 @@ enum DocumentIngestStatus {
 enum DocumentReadingStatus {
   unread
   read
+}
+
+enum DocumentMediaKind {
+  content_image
+  cover_image
+}
+
+enum DocumentMediaStatus {
+  succeeded
+  failed
+  skipped
+}
+
+enum DocumentMediaReason {
+  storage_not_configured
+  unsupported_type
+  data_url_not_supported
+  over_limit
+  invalid_url
+  blocked_private_ip
+  redirect_blocked
+  download_timeout
+  download_failed
+  too_large
+  mime_mismatch
+  upload_failed
+  unknown
 }
 
 enum AiAnalysisStatus {

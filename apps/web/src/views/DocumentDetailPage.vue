@@ -75,32 +75,15 @@ const route = useRoute()
 const router = useRouter()
 const { toast } = useToast()
 const markdown = new MarkdownIt({
-  html: false,
+  html: true,
   linkify: true,
   breaks: true,
 })
-const defaultHeadingOpen =
-  markdown.renderer.rules.heading_open ||
-  ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
 const defaultFence =
   markdown.renderer.rules.fence ||
   ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
 
 const shikiHighlighter = ref<ShikiHighlighter | null>(null)
-
-markdown.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
-  const headingEnv = env as { headingIds?: string[]; headingIdIndex?: number }
-  const headingIds = headingEnv.headingIds || []
-  const headingIdIndex = headingEnv.headingIdIndex || 0
-  const id = headingIds[headingIdIndex]
-
-  if (id) {
-    tokens[idx].attrSet('id', id)
-  }
-
-  headingEnv.headingIdIndex = headingIdIndex + 1
-  return defaultHeadingOpen(tokens, idx, options, env, self)
-}
 
 markdown.renderer.rules.fence = (tokens, idx, options, env, self) => {
   const highlighter = shikiHighlighter.value
@@ -156,16 +139,9 @@ const annotationDialogOpen = ref(false)
 const annotationNote = ref('')
 const editingAnnotation = ref<AnnotationDto | null>(null)
 let pollingTimer: number | undefined
-
-const headingIndex = computed(() => {
-  if (!document.value || document.value.ingestStatus !== 'succeeded') {
-    return { all: [] as TocItem[], visible: [] as TocItem[] }
-  }
-
-  return buildHeadingIndex(document.value.markdown)
-})
-
-const tocItems = computed(() => headingIndex.value.visible)
+let headingObserver: IntersectionObserver | null = null
+const tocItems = ref<TocItem[]>([])
+const activeTocId = ref('')
 
 const renderedMarkdown = computed(() => {
   const current = document.value
@@ -173,10 +149,11 @@ const renderedMarkdown = computed(() => {
   if (!current || current.ingestStatus !== 'succeeded') return ''
 
   const html = DOMPurify.sanitize(
-    markdown.render(current.markdown, {
-      headingIds: headingIndex.value.all.map((item) => item.id),
-      headingIdIndex: 0,
-    }),
+    markdown.render(current.markdown),
+    {
+      ADD_ATTR: ['target', 'rel', 'loading'],
+      ADD_TAGS: ['figure', 'figcaption'],
+    },
   )
 
   return applyReaderHighlights(html, sortedAnnotations.value, citationRange.value)
@@ -306,8 +283,14 @@ watch(citationRange, async () => {
   scrollToCitationRange()
 })
 
+watch(renderedMarkdown, async () => {
+  await nextTick()
+  refreshRuntimeToc()
+})
+
 onBeforeUnmount(() => {
   if (pollingTimer) window.clearInterval(pollingTimer)
+  disconnectHeadingObserver()
 })
 
 async function initShiki() {
@@ -352,6 +335,7 @@ async function loadDocument(options: { silent?: boolean } = {}) {
       await loadConversations()
     }
     await nextTick()
+    refreshRuntimeToc()
     scrollToCitationRange()
   } catch (error) {
     notifyError(error, '文章加载失败')
@@ -649,6 +633,22 @@ function handleArticleClick(event: MouseEvent) {
   }
 }
 
+function handleReaderImageError(event: Event) {
+  const image = event.target as HTMLImageElement | null
+  if (!image || image.tagName !== 'IMG' || image.dataset.fallbackShown === 'true') return
+
+  image.dataset.fallbackShown = 'true'
+  image.classList.add('is-broken')
+  const src = image.currentSrc || image.src
+  const fallback = globalThis.document.createElement('a')
+  fallback.className = 'reader-image-fallback'
+  fallback.href = src
+  fallback.target = '_blank'
+  fallback.rel = 'noopener noreferrer'
+  fallback.textContent = '图片加载失败，打开原图'
+  image.insertAdjacentElement('afterend', fallback)
+}
+
 async function createHighlight(note?: string | null) {
   if (!document.value || !selectionDraft.value) return
   const draft = selectionDraft.value
@@ -781,51 +781,67 @@ function aiList(items?: string[] | null) {
   return items?.filter(Boolean) || []
 }
 
-function buildHeadingIndex(source: string) {
-  const tokens = markdown.parse(source, {})
-  const counts = new Map<string, number>()
-  const all: TocItem[] = []
-  const visible: TocItem[] = []
+function refreshRuntimeToc() {
+  disconnectHeadingObserver()
+  tocItems.value = []
+  activeTocId.value = ''
 
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index]
-    if (token.type !== 'heading_open') continue
+  if (!articleContentRef.value || !isIngestSucceeded.value) return
 
-    const level = Number(token.tag.replace('h', ''))
-    if (!Number.isInteger(level) || level < 1 || level > 6) continue
+  const headings = Array.from(
+    articleContentRef.value.querySelectorAll<HTMLElement>('h2, h3'),
+  )
+  const items: TocItem[] = []
 
-    const title = tokens[index + 1]?.content.trim()
-    if (!title) continue
-
-    const item = {
-      id: createHeadingId(title, level, counts),
-      title,
-      level,
+  headings.forEach((heading, index) => {
+    const title = normalizeTocTitle(heading.textContent || '')
+    const level = heading.tagName.toLowerCase() === 'h3' ? 3 : 2
+    const id = `heading-${index}`
+    heading.id = id
+    if (title) {
+      items.push({ id, title, level })
     }
+  })
 
-    all.push(item)
-    if (level <= 3) {
-      visible.push(item)
-    }
-  }
+  if (items.length < 2) return
 
-  return { all, visible }
+  tocItems.value = items
+  activeTocId.value = items[0]?.id || ''
+  observeRuntimeHeadings(headings)
 }
 
-function createHeadingId(title: string, level: number, counts: Map<string, number>) {
-  const normalized = title
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{Letter}\p{Number}\s_-]/gu, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
+function normalizeTocTitle(value: string) {
+  return value.replace(/\s+/g, ' ').trim()
+}
 
-  const base = normalized || `heading-${level}`
-  const currentCount = counts.get(base) || 0
-  counts.set(base, currentCount + 1)
+function observeRuntimeHeadings(headings: HTMLElement[]) {
+  if (typeof IntersectionObserver === 'undefined') return
 
-  return currentCount === 0 ? base : `${base}-${currentCount + 1}`
+  const scrollRoot = globalThis.document.querySelector<HTMLElement>('.content')
+  headingObserver = new IntersectionObserver(
+    (entries) => {
+      const visibleEntry = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
+      if (visibleEntry?.target instanceof HTMLElement) {
+        activeTocId.value = visibleEntry.target.id
+      }
+    },
+    {
+      root: scrollRoot || null,
+      rootMargin: '-80px 0px -70% 0px',
+      threshold: [0, 1],
+    },
+  )
+
+  for (const heading of headings) {
+    headingObserver.observe(heading)
+  }
+}
+
+function disconnectHeadingObserver() {
+  headingObserver?.disconnect()
+  headingObserver = null
 }
 
 function scrollToHeading(id: string) {
@@ -1232,6 +1248,7 @@ function getErrorMessage(error: unknown, fallback: string) {
               ref="articleContentRef"
               class="article-detail-content markdown-reader"
               @click="handleArticleClick"
+              @error.capture="handleReaderImageError"
               @mouseup="handleTextSelection"
               v-html="renderedMarkdown"
             ></div>
@@ -1248,7 +1265,7 @@ function getErrorMessage(error: unknown, fallback: string) {
                 v-for="item in tocItems"
                 :key="item.id"
                 class="article-toc-link"
-                :class="`level-${item.level}`"
+                :class="[`level-${item.level}`, { active: activeTocId === item.id }]"
                 type="button"
                 @click="scrollToHeading(item.id)"
               >

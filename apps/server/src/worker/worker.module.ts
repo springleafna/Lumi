@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AiModule } from '../ai/ai.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
+import { MediaModule } from '../media/media.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { QueueModule } from '../queue/queue.module';
 import { AiAnalysisProcessor } from './ai-analysis.processor';
@@ -18,6 +19,7 @@ import { IngestProcessor } from './ingest.processor';
     QueueModule,
     AiModule,
     EmbeddingsModule,
+    MediaModule,
   ],
   providers: [IngestProcessor, AiAnalysisProcessor, EmbeddingProcessor],
 })

@@ -16,7 +16,7 @@ The repository is a pnpm monorepo. Prefer running scripts from the repository ro
 - `packages/api-client`: axios client wrapper
 - `packages/parser`: HTML extraction and Markdown conversion
 - `packages/ai`: AI provider placeholder
-- `packages/storage`: object storage placeholder
+- `packages/storage`: RustFS / S3-compatible object storage wrapper
 
 ## Completed MVP Scope
 
@@ -64,6 +64,18 @@ The repository is a pnpm monorepo. Prefer running scripts from the repository ro
   - Web local `.md` / `.txt` file import; local file documents use source `本地`
   - extension selected-content import into `fragment` documents
   - Shiki-based fenced code block highlighting in the Markdown reader
+- MVP6:
+  - Web AI settings center for separate Chat and Embedding provider configs
+  - encrypted AI API key storage through `AI_CONFIG_ENCRYPTION_KEY`
+  - Embedding index jobs after document ingest succeeds
+  - knowledge-base AI chat with sessions, citations, regeneration, and Markdown answers
+  - index job management with status filters, retry, and completed chunk inspection
+- MVP7:
+  - parser quality improvements for cleaner article extraction, metadata, links, lazy images, `srcset`, and safe HTML
+  - runtime TOC generated from rendered `h2` / `h3` textContent, with sequential anchors and current-section highlight
+  - new URL / HTML article image archiving to RustFS / S3-compatible object storage
+  - `DocumentMediaAsset` records content/cover image archive success, failure, and skipped states
+  - reader image display improvements for responsive images, `figure`, `figcaption`, and failed-image fallback links
 
 ## Web UI Direction
 
@@ -137,6 +149,7 @@ Database scripts:
 - Default API base URL: `http://127.0.0.1:3000/api`
 - Default web origin: `http://localhost:5173`
 - Default Redis URL: `redis://localhost:6379`
+- Object storage for MVP7 is optional; when incomplete, URL / HTML ingest keeps original image URLs.
 - Extension dev server runs on `http://127.0.0.1:5174`.
 - Extension settings are stored in `browser.storage.local`.
 - Extension defaults:
@@ -150,6 +163,20 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/lumi?schema=public"
 ```
 
 If the PostgreSQL password contains special characters such as `#`, URL-encode them in `DATABASE_URL`.
+
+Object storage env keys for RustFS / S3-compatible image archiving:
+
+```env
+OBJECT_STORAGE_ENDPOINT=""
+OBJECT_STORAGE_BUCKET=""
+OBJECT_STORAGE_PUBLIC_BASE_URL=""
+OBJECT_STORAGE_ACCESS_KEY_ID=""
+OBJECT_STORAGE_SECRET_ACCESS_KEY=""
+OBJECT_STORAGE_REGION="us-east-1"
+OBJECT_STORAGE_FORCE_PATH_STYLE=true
+```
+
+The bucket must be created manually and configured for public read.
 
 ## Server Notes
 
@@ -174,6 +201,12 @@ If the PostgreSQL password contains special characters such as `#`, URL-encode t
 - Local file import should set `Document.source = 本地`.
 - Tags are manual plain-text tags.
 - AI generated tags are written into the same manual tag system and remain user editable.
+- `DocumentMediaAsset` tracks MVP7 image archiving results for URL / HTML imports.
+- Image archiving only applies to newly imported URL / HTML articles, not historical articles, selection fragments, or local files.
+- Supported archived image types are JPEG, PNG, WebP, GIF, and AVIF; SVG and unknown types are skipped or failed.
+- Content image archiving processes at most 60 images per article; cover image is handled separately.
+- Single image download limit is 10MB, timeout is 10s, max redirects is 3, and private/local IP targets must be blocked.
+- Permanent delete best-effort deletes successful media objects from object storage; failures must not block document deletion.
 
 ## MVP4 AI API
 
@@ -185,6 +218,28 @@ GET    /api/documents/:id/ai-analysis
 POST   /api/documents/:id/ai-analysis/retry
 GET    /api/documents/:id/ai-conversations
 POST   /api/documents/:id/ai-conversations
+```
+
+MVP6 knowledge and settings API surface includes:
+
+```txt
+GET    /api/settings/ai
+PUT    /api/settings/ai/chat
+PUT    /api/settings/ai/embedding
+DELETE /api/settings/ai/chat
+DELETE /api/settings/ai/embedding
+POST   /api/settings/ai/chat/test
+POST   /api/settings/ai/embedding/test
+GET    /api/settings/embedding-jobs
+GET    /api/settings/embedding-jobs/:id/chunks
+POST   /api/settings/embedding-jobs/:id/retry
+GET    /api/knowledge-chat/sessions
+POST   /api/knowledge-chat/sessions/ask
+GET    /api/knowledge-chat/sessions/:id
+PATCH  /api/knowledge-chat/sessions/:id
+DELETE /api/knowledge-chat/sessions/:id
+POST   /api/knowledge-chat/sessions/:id/messages
+POST   /api/knowledge-chat/messages/:messageId/regenerate
 ```
 
 AI env keys:
@@ -257,6 +312,8 @@ HTML ingest request:
 - Requires JWT.
 - Creates an `IngestJob`.
 - `POST /api/ingest/html` uses `type = html`.
+- URL / HTML Worker flow runs parser cleanup and media archiving before saving final document content, then enqueues AI analysis and Embedding indexing.
+- If object storage is not configured, media archiving records skipped assets and keeps the original Markdown image URLs.
 - Duplicate URL rules are shared with URL ingest.
 - `POST /api/ingest/file` accepts multipart field `file`, supports `.md` and `.txt`, max `2MB`, and creates a complete article immediately.
 - File imports are not deduplicated by URL and should show source `本地`.
@@ -283,7 +340,7 @@ HTML ingest request:
 
 ## Implementation Notes
 
-- `@lumi/shared`, `@lumi/parser`, and `@lumi/api-client` build to `dist/`.
+- `@lumi/shared`, `@lumi/parser`, `@lumi/storage`, and `@lumi/api-client` build to `dist/`.
 - Web, server, and extension scripts should run `build:packages` first when they depend on workspace package output.
 - Prefer adding shared DTO changes in `packages/shared` before changing API client/server/web code.
 - Prefer using `@lumi/api-client` in Web and extension instead of raw axios calls.

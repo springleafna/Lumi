@@ -41,10 +41,21 @@ Lumi 是一个自用的个人知识管理系统，用于收集、转换、保存
 - Web 支持导入本地 `.md` / `.txt` 文档，本地导入来源显示为“本地”
 - 浏览器插件支持保存网页选中内容为片段
 - Markdown 阅读器支持 fenced code block 基础高亮
+- MVP6：
+- Web 端 AI 配置中心，支持 Chat 和 Embedding 分开配置与测试
+- 文档解析完成后自动创建知识库向量索引任务
+- 知识库级 AI 问答，支持会话列表、引用来源和重新生成
+- 索引任务列表支持查看状态、失败重试和完成任务分片内容
+- MVP7：
+- 优化网页正文提取、元信息提取、链接和图片候选规范化
+- 文章目录改为从渲染后 `h2 / h3` 读取纯文本并高亮当前位置
+- URL / HTML 新导入文章支持正文图片和封面图归档到 RustFS / S3-compatible 存储
+- 新增 `DocumentMediaAsset` 记录图片归档成功、失败和跳过结果
+- 阅读页优化图片、`figure`、`figcaption` 展示，并在图片加载失败时显示原图链接
 
 ## 当前不支持
 
-CLI 导入、插件保存历史、Docker Compose、pgvector、跨文章知识库问答、语义搜索、图片本地化、PDF/RSS/视频/音频解析、批量文件导入、收藏页、批注汇总页、阅读统计页和注册页暂不实现。
+CLI 导入、插件保存历史、Docker Compose、历史文章批量重新提取、历史文章批量图片归档、图片压缩转码、对象存储连接测试 UI、PDF/RSS/视频/音频解析、批量文件导入、收藏页、批注汇总页、阅读统计页和注册页暂不实现。
 
 ## 环境要求
 
@@ -52,6 +63,7 @@ CLI 导入、插件保存历史、Docker Compose、pgvector、跨文章知识库
 - pnpm >= 9
 - PostgreSQL
 - Redis
+- RustFS / S3-compatible 对象存储（可选；未配置时会保留原站图片 URL）
 
 默认端口：
 
@@ -86,7 +98,15 @@ ADMIN_USERNAME="admin"
 ADMIN_PASSWORD="admin123456"
 REDIS_URL="redis://localhost:6379"
 VITE_API_BASE_URL="http://localhost:3000/api"
+OBJECT_STORAGE_ENDPOINT=""
+OBJECT_STORAGE_BUCKET=""
+OBJECT_STORAGE_PUBLIC_BASE_URL=""
+OBJECT_STORAGE_ACCESS_KEY_ID=""
+OBJECT_STORAGE_SECRET_ACCESS_KEY=""
+OBJECT_STORAGE_REGION="us-east-1"
+OBJECT_STORAGE_FORCE_PATH_STYLE=true
 AI_PROVIDER="deepseek"
+AI_CONFIG_ENCRYPTION_KEY="change-me-at-least-32-characters-long"
 DEEPSEEK_API_KEY=""
 DEEPSEEK_BASE_URL="https://api.deepseek.com"
 DEEPSEEK_MODEL="deepseek-chat"
@@ -221,6 +241,23 @@ GET    /api/documents/:id/ai-analysis
 POST   /api/documents/:id/ai-analysis/retry
 GET    /api/documents/:id/ai-conversations
 POST   /api/documents/:id/ai-conversations
+GET    /api/settings/ai
+PUT    /api/settings/ai/chat
+PUT    /api/settings/ai/embedding
+DELETE /api/settings/ai/chat
+DELETE /api/settings/ai/embedding
+POST   /api/settings/ai/chat/test
+POST   /api/settings/ai/embedding/test
+GET    /api/settings/embedding-jobs
+GET    /api/settings/embedding-jobs/:id/chunks
+POST   /api/settings/embedding-jobs/:id/retry
+GET    /api/knowledge-chat/sessions
+POST   /api/knowledge-chat/sessions/ask
+GET    /api/knowledge-chat/sessions/:id
+PATCH  /api/knowledge-chat/sessions/:id
+DELETE /api/knowledge-chat/sessions/:id
+POST   /api/knowledge-chat/sessions/:id/messages
+POST   /api/knowledge-chat/messages/:messageId/regenerate
 ```
 
 文章列表支持以下常用查询参数：
@@ -267,6 +304,8 @@ HTML 最大 5MB，超过会返回错误。
 
 MVP4 后 URL / HTML 导入接口会立即创建占位文章和导入任务，真正的网页抓取、正文解析和 AI 分析由 Worker 异步完成。MVP5 的文件导入和选中内容导入会立即创建完整文档或片段。
 
+MVP7 后 URL / HTML 新导入文章会在 Worker 解析阶段尝试归档正文图片和封面图。对象存储配置完整时，图片会上传到 RustFS / S3-compatible Bucket，并把 Markdown 图片 URL 和 `coverImage` 替换为公共访问地址；配置缺失、下载失败、格式不支持或超过限制时会保留原始图片 URL，不阻断文章导入。图片归档只处理新导入 URL / HTML 文章，不处理历史文章、选中内容和本地文件。
+
 ## Workspace
 
 - `apps/web`: Vue 3 Web 客户端
@@ -277,4 +316,4 @@ MVP4 后 URL / HTML 导入接口会立即创建占位文章和导入任务，真
 - `packages/api-client`: API Client
 - `packages/parser`: 网页正文解析和 Markdown 转换
 - `packages/ai`: AI Provider 预留
-- `packages/storage`: 对象存储预留
+- `packages/storage`: RustFS / S3-compatible 对象存储封装

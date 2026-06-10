@@ -19,10 +19,11 @@ import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
 import { toDocumentDetail, toIngestJobDto } from '../documents/document.mapper';
-
-export const MAX_HTML_BYTES = 5 * 1024 * 1024;
-export const MAX_FILE_BYTES = 2 * 1024 * 1024;
-export const MAX_SELECTION_BYTES = 200 * 1024;
+import {
+  MAX_FILE_BYTES,
+  MAX_SELECTION_BYTES,
+  validateHtml,
+} from './ingest.validation';
 
 export type UploadedTextFile = {
   originalname: string;
@@ -388,19 +389,6 @@ export class IngestService {
       }
     }
   }
-}
-
-export function validateHtml(value: string): string {
-  const html = value?.trim();
-  if (!html) {
-    throw new BadRequestException('页面内容为空');
-  }
-
-  if (Buffer.byteLength(html, 'utf8') > MAX_HTML_BYTES) {
-    throw new BadRequestException('页面内容过大，暂不支持保存');
-  }
-
-  return html;
 }
 
 export function normalizeUrl(value: string): string {

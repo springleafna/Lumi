@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma';
 import type {
   AnnotationDto,
@@ -14,6 +14,7 @@ import type {
   UpdateAnnotationRequest,
 } from '@lumi/shared';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
+import { MediaArchiveService } from '../media/media-archive.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   type DocumentWithTags,
@@ -38,9 +39,12 @@ const documentInclude = {
 
 @Injectable()
 export class DocumentsService {
+  private readonly logger = new Logger(DocumentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly embeddingsService: EmbeddingsService,
+    private readonly mediaArchiveService: MediaArchiveService,
   ) {}
 
   async list(
@@ -262,9 +266,28 @@ export class DocumentsService {
 
   async permanentDelete(userId: string, id: string) {
     await this.ensureOwnedDocument(userId, id, { deletedAt: { not: null } });
+    const mediaAssets = await this.prisma.documentMediaAsset.findMany({
+      where: {
+        userId,
+        documentId: id,
+        status: 'succeeded',
+        objectKey: { not: null },
+      },
+      select: { objectKey: true },
+    });
+
     await this.prisma.document.delete({
       where: { id },
     });
+
+    try {
+      await this.mediaArchiveService.deleteObjectsBestEffort(
+        mediaAssets.map((asset) => asset.objectKey),
+      );
+    } catch (error) {
+      this.logger.warn(`媒体对象删除流程失败 ${id}: ${getErrorMessage(error)}`);
+    }
+
     return { id };
   }
 
@@ -531,4 +554,9 @@ function getGroupCount(value: unknown): number {
   if (typeof count === 'number') return count;
   const allCount = (value as { _all?: unknown })._all;
   return typeof allCount === 'number' ? allCount : 0;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return '未知错误';
 }

@@ -6,7 +6,8 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "nest build",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "pnpm clean && nest build",
     "db:init-user": "ts-node -r tsconfig-paths/register scripts/init-user.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "prisma": "prisma",

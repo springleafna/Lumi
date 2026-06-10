@@ -6,6 +6,7 @@ import { Worker, type Job } from 'bullmq';
 import type { RedisOptions } from 'ioredis';
 import { AiProviderService } from '../ai/ai-provider.service';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
+import { MediaArchiveService } from '../media/media-archive.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   INGEST_QUEUE_NAME,
@@ -16,7 +17,7 @@ import type {
   IngestQueueJobData,
   IngestQueueJobName,
 } from '../queue/queue.types';
-import { validateHtml } from '../ingest/ingest.service';
+import { validateHtml } from '../ingest/ingest.validation';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -32,6 +33,7 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly queueService: QueueService,
     private readonly aiProviderService: AiProviderService,
     private readonly embeddingsService: EmbeddingsService,
+    private readonly mediaArchiveService: MediaArchiveService,
     @Inject(REDIS_CONNECTION_OPTIONS)
     private readonly connection: RedisOptions,
   ) {}
@@ -66,89 +68,158 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
     if (!ingestJob || !ingestJob.documentId || !ingestJob.inputUrl) {
       throw new BadRequestException('导入任务不存在或缺少必要信息');
     }
-
-    await this.prisma.$transaction([
-      this.prisma.ingestJob.update({
-        where: { id: ingestJob.id },
-        data: {
-          status: 'processing',
-          errorMessage: null,
-          startedAt: ingestJob.startedAt ?? new Date(),
-        },
-      }),
-      this.prisma.document.update({
-        where: { id: ingestJob.documentId },
-        data: {
-          ingestStatus: 'processing',
-          ingestErrorMessage: null,
-        },
-      }),
-    ]);
+    const documentId = ingestJob.documentId;
+    const inputUrl = ingestJob.inputUrl;
 
     try {
+      await this.markIngestProcessing(ingestJob.id, documentId, ingestJob.startedAt);
+
       const html =
         ingestJob.type === 'html'
           ? validateHtml(ingestJob.inputHtml || '')
-          : await this.fetchHtml(ingestJob.inputUrl);
+          : await this.fetchHtml(inputUrl);
       const parsed = await parseArticleFromHtml({
         html,
-        url: ingestJob.inputUrl,
+        url: inputUrl,
       });
 
       if (!parsed.markdown) {
         throw new BadRequestException('未能提取到可保存的正文内容');
       }
 
-      const document = await this.prisma.document.update({
-        where: { id: ingestJob.documentId },
-        data: {
-          title: parsed.title || ingestJob.inputTitle || ingestJob.inputUrl,
-          url: ingestJob.inputUrl,
-          source: parsed.siteName,
-          author: parsed.author,
-          excerpt: parsed.excerpt,
-          coverImage: parsed.coverImage,
-          markdown: parsed.markdown,
-          contentText: parsed.contentText,
-          wordCount: parsed.wordCount,
-          publishedAt: parseDate(parsed.publishedAt),
-          ingestStatus: 'succeeded',
-          ingestErrorMessage: null,
-        },
+      const media = await this.archiveMediaBestEffort({
+        userId: ingestJob.userId,
+        documentId,
+        articleUrl: inputUrl,
+        markdown: parsed.markdown,
+        coverImage: parsed.coverImage,
+        images: parsed.images,
       });
 
-      await this.prisma.ingestJob.update({
-        where: { id: ingestJob.id },
-        data: {
+      const previousObjectKeys = await this.prisma.documentMediaAsset.findMany({
+        where: {
+          documentId,
           status: 'succeeded',
-          documentId: document.id,
-          errorMessage: null,
-          finishedAt: new Date(),
+          objectKey: { not: null },
         },
+        select: { objectKey: true },
       });
+      const nextObjectKeys = new Set(
+        media.assets
+          .map((asset) => asset.objectKey)
+          .filter((key): key is string => typeof key === 'string' && key.length > 0),
+      );
+
+      const document = await this.prisma.$transaction(
+        async (tx) => {
+          const updatedDocument = await tx.document.update({
+            where: { id: documentId },
+            data: {
+              title: parsed.title || ingestJob.inputTitle || inputUrl,
+              url: inputUrl,
+              source: parsed.siteName,
+              author: parsed.author,
+              excerpt: parsed.excerpt,
+              coverImage: media.coverImage,
+              markdown: media.markdown,
+              contentText: parsed.contentText,
+              wordCount: parsed.wordCount,
+              publishedAt: parseDate(parsed.publishedAt),
+              ingestStatus: 'succeeded',
+              ingestErrorMessage: null,
+            },
+          });
+
+          await tx.documentMediaAsset.deleteMany({
+            where: { documentId },
+          });
+          if (media.assets.length > 0) {
+            await tx.documentMediaAsset.createMany({
+              data: media.assets,
+            });
+          }
+
+          await tx.ingestJob.update({
+            where: { id: ingestJob.id },
+            data: {
+              status: 'succeeded',
+              documentId: updatedDocument.id,
+              errorMessage: null,
+              finishedAt: new Date(),
+            },
+          });
+
+          return updatedDocument;
+        },
+        { timeout: 15000 },
+      );
+
+      await this.mediaArchiveService.deleteObjectsBestEffort(
+        previousObjectKeys
+          .map((asset) => asset.objectKey)
+          .filter((key) => key && !nextObjectKeys.has(key)),
+      );
 
       await this.enqueueAiAnalysis(document.userId, document.id);
       await this.embeddingsService.enqueueDocumentIndexBestEffort(document.userId, document.id);
     } catch (error) {
       const message = getErrorMessage(error);
-      await this.prisma.$transaction([
-        this.prisma.ingestJob.update({
-          where: { id: ingestJob.id },
-          data: {
-            status: 'failed',
-            errorMessage: message,
-            finishedAt: new Date(),
-          },
-        }),
-        this.prisma.document.update({
-          where: { id: ingestJob.documentId },
-          data: {
-            ingestStatus: 'failed',
-            ingestErrorMessage: message,
-          },
-        }),
-      ]);
+      await this.markIngestFailedBestEffort(ingestJob.id, documentId, message);
       throw error;
+    }
+  }
+
+  private async markIngestProcessing(
+    ingestJobId: string,
+    documentId: string,
+    startedAt?: Date | null,
+  ) {
+    await Promise.all([
+      this.prisma.ingestJob.update({
+        where: { id: ingestJobId },
+        data: {
+          status: 'processing',
+          errorMessage: null,
+          startedAt: startedAt ?? new Date(),
+        },
+      }),
+      this.prisma.document.update({
+        where: { id: documentId },
+        data: {
+          ingestStatus: 'processing',
+          ingestErrorMessage: null,
+        },
+      }),
+    ]);
+  }
+
+  private async markIngestFailedBestEffort(
+    ingestJobId: string,
+    documentId: string,
+    message: string,
+  ) {
+    const results = await Promise.allSettled([
+      this.prisma.ingestJob.update({
+        where: { id: ingestJobId },
+        data: {
+          status: 'failed',
+          errorMessage: message,
+          finishedAt: new Date(),
+        },
+      }),
+      this.prisma.document.update({
+        where: { id: documentId },
+        data: {
+          ingestStatus: 'failed',
+          ingestErrorMessage: message,
+        },
+      }),
+    ]);
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        this.logger.warn(`导入失败状态写入失败 ${documentId}: ${getErrorMessage(result.reason)}`);
+      }
     }
   }
 
@@ -196,6 +267,28 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
           `AI 分析失败状态写入失败 ${documentId}: ${getErrorMessage(updateError)}`,
         );
       }
+    }
+  }
+
+  private async archiveMediaBestEffort(input: {
+    userId: string;
+    documentId: string;
+    articleUrl: string;
+    markdown: string;
+    coverImage?: string | null;
+    images?: Awaited<ReturnType<typeof parseArticleFromHtml>>['images'];
+  }) {
+    try {
+      return await this.mediaArchiveService.archiveArticleMedia(input);
+    } catch (error) {
+      this.logger.warn(
+        `图片归档流程跳过 ${input.documentId}: ${getErrorMessage(error)}`,
+      );
+      return {
+        markdown: input.markdown,
+        coverImage: input.coverImage,
+        assets: [],
+      };
     }
   }
 

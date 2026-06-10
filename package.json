@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "build:packages": "pnpm --filter @lumi/shared build && pnpm --filter @lumi/parser build && pnpm --filter @lumi/api-client build",
+    "build:packages": "pnpm --filter @lumi/shared build && pnpm --filter @lumi/parser build && pnpm --filter @lumi/storage build && pnpm --filter @lumi/api-client build",
     "dev:web": "pnpm build:packages && pnpm --filter @lumi/web dev",
     "dev:server": "pnpm db:generate && pnpm build:packages && pnpm --filter @lumi/server start:dev",
     "dev:worker": "pnpm db:generate && pnpm build:packages && pnpm --filter @lumi/server start:worker:dev",
