@@ -12,6 +12,7 @@ import type { Prisma } from '../generated/prisma';
 import { AiProviderService } from '../ai/ai-provider.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
+import { getErrorMessage } from '../common/error.utils';
 
 type ChunkDraft = {
   content: string;
@@ -35,6 +36,14 @@ type VectorSearchRow = {
 
 export type RetrievedChunk = VectorSearchRow;
 
+/**
+ * Embedding 向量索引与检索服务。
+ *
+ * 索引侧：把文档正文按分隔符切块并去重，批量调用 Embedding 模型生成向量，
+ * 写入 pgvector；同一文档重复索引会先清理旧分片再写入。
+ * 检索侧：把查询文本转向量后在 pgvector 中按余弦相似度取 Top-K 分片，
+ * 供知识库问答组装上下文。
+ */
 @Injectable()
 export class EmbeddingsService {
   constructor(
@@ -618,9 +627,4 @@ function toVectorLiteral(vector: number[]) {
 
 function createCuidLikeId() {
   return `cm${Date.now().toString(36)}${Math.random().toString(36).slice(2, 18)}`;
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return '未知错误';
 }

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import DOMPurify from 'dompurify'
 import {
   Archive,
   ArchiveRestore,
@@ -9,19 +8,12 @@ import {
   ExternalLink,
   Highlighter,
   LoaderCircle,
-  MessageSquare,
-  PencilLine,
-  Plus,
   RefreshCw,
   RotateCcw,
   Settings,
   Star,
-  Tag,
   Trash2,
-  X,
 } from 'lucide-vue-next'
-import MarkdownIt from 'markdown-it'
-import { createHighlighter, type Highlighter as ShikiHighlighter } from 'shiki/bundle/web'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
@@ -36,9 +28,19 @@ import UiButton from '../components/ui/Button.vue'
 import UiCard from '../components/ui/Card.vue'
 import UiDialog from '../components/ui/Dialog.vue'
 import UiEmptyState from '../components/ui/EmptyState.vue'
-import UiInput from '../components/ui/Input.vue'
-import UiTabs from '../components/ui/Tabs.vue'
+import AiDrawer from '../components/document-detail/AiDrawer.vue'
+import AnnotationLayer from '../components/document-detail/AnnotationLayer.vue'
+import ArticleToc from '../components/document-detail/ArticleToc.vue'
+import TagEditor from '../components/document-detail/TagEditor.vue'
 import { useToast } from '../composables/useToast'
+import { useMarkdownRenderer } from '../composables/useMarkdownRenderer'
+import { useRuntimeToc } from '../composables/useRuntimeToc'
+import {
+  applyReaderHighlights,
+  countOccurrencesBefore,
+  getSelectionOffsets,
+  hasAnnotationOverlap,
+} from '../lib/highlight-dom'
 import lumiLogo from '../assets/lumi-logo.svg'
 import { client } from '../lib/client'
 
@@ -47,12 +49,6 @@ type ConfirmDialogState = {
   description: string
   actionLabel: string
   run: () => Promise<void>
-}
-
-type TocItem = {
-  id: string
-  title: string
-  level: number
 }
 
 type DrawerTab = 'ai' | 'annotations'
@@ -74,33 +70,12 @@ type CitationRange = {
 const route = useRoute()
 const router = useRouter()
 const { toast } = useToast()
-const markdown = new MarkdownIt({
-  html: true,
-  linkify: true,
-  breaks: true,
-})
-const defaultFence =
-  markdown.renderer.rules.fence ||
-  ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
 
-const shikiHighlighter = ref<ShikiHighlighter | null>(null)
+// Markdown 渲染管线（详情页允许 HTML，需经 DOMPurify 清洗）。
+const { shikiHighlighter, initShiki, render } = useMarkdownRenderer({ html: true })
 
-markdown.renderer.rules.fence = (tokens, idx, options, env, self) => {
-  const highlighter = shikiHighlighter.value
-  const token = tokens[idx]
-  const lang = normalizeCodeLang(token.info)
-  if (highlighter) {
-    try {
-      return highlighter.codeToHtml(token.content, {
-        lang,
-        theme: 'github-light',
-      })
-    } catch {
-      // Fall back to markdown-it below.
-    }
-  }
-  return defaultFence(tokens, idx, options, env, self)
-}
+// 运行时目录（标题来自 v-html 注入，需手动 refresh）。
+const { tocItems, activeTocId, refresh: refreshToc, scrollToHeading } = useRuntimeToc()
 
 const documentTypes: Array<{ value: DocumentType; label: string }> = [
   { value: 'article', label: '文章' },
@@ -110,18 +85,14 @@ const documentTypes: Array<{ value: DocumentType; label: string }> = [
   { value: 'fragment', label: '片段' },
 ]
 
-const drawerTabs = [
-  { value: 'ai', label: 'AI' },
-  { value: 'annotations', label: '批注' },
-]
-
 const document = ref<DocumentDetail | null>(null)
 const loading = ref(false)
 const actionLoading = ref(false)
-const tagName = ref('')
 const errorMessage = ref('')
 const confirmDialog = ref<ConfirmDialogState | null>(null)
 const confirmLoading = ref(false)
+
+// AI 抽屉状态
 const drawerOpen = ref(false)
 const drawerTab = ref<DrawerTab>('ai')
 const conversations = ref<AiConversationDto[]>([])
@@ -129,6 +100,8 @@ const conversationsLoading = ref(false)
 const aiActionLoading = ref(false)
 const aiQuestion = ref('')
 const streamingConversationId = ref('')
+
+// 高亮批注状态
 const annotations = ref<AnnotationDto[]>([])
 const annotationsLoading = ref(false)
 const annotationActionLoading = ref('')
@@ -138,26 +111,8 @@ const selectionToolbar = ref({ visible: false, x: 0, y: 0 })
 const annotationDialogOpen = ref(false)
 const annotationNote = ref('')
 const editingAnnotation = ref<AnnotationDto | null>(null)
+
 let pollingTimer: number | undefined
-let headingObserver: IntersectionObserver | null = null
-const tocItems = ref<TocItem[]>([])
-const activeTocId = ref('')
-
-const renderedMarkdown = computed(() => {
-  const current = document.value
-  Boolean(shikiHighlighter.value)
-  if (!current || current.ingestStatus !== 'succeeded') return ''
-
-  const html = DOMPurify.sanitize(
-    markdown.render(current.markdown),
-    {
-      ADD_ATTR: ['target', 'rel', 'loading'],
-      ADD_TAGS: ['figure', 'figcaption'],
-    },
-  )
-
-  return applyReaderHighlights(html, sortedAnnotations.value, citationRange.value)
-})
 
 const sortedAnnotations = computed(() =>
   [...annotations.value].sort((a, b) => {
@@ -165,6 +120,16 @@ const sortedAnnotations = computed(() =>
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   }),
 )
+
+const renderedMarkdown = computed(() => {
+  const current = document.value
+  // 引用 shikiHighlighter 触发 highlighter 就绪后重算。
+  Boolean(shikiHighlighter.value)
+  if (!current || current.ingestStatus !== 'succeeded') return ''
+
+  const html = render(current.markdown)
+  return applyReaderHighlights(html, sortedAnnotations.value, citationRange.value)
+})
 
 const isTrash = computed(() => Boolean(document.value?.deletedAt))
 const isArchived = computed(() => Boolean(document.value?.archivedAt) && !isTrash.value)
@@ -290,34 +255,7 @@ watch(renderedMarkdown, async () => {
 
 onBeforeUnmount(() => {
   if (pollingTimer) window.clearInterval(pollingTimer)
-  disconnectHeadingObserver()
 })
-
-async function initShiki() {
-  try {
-    shikiHighlighter.value = await createHighlighter({
-      themes: ['github-light'],
-      langs: [
-        'bash',
-        'css',
-        'html',
-        'java',
-        'javascript',
-        'json',
-        'markdown',
-        'python',
-        'shell',
-        'sql',
-        'tsx',
-        'typescript',
-        'vue',
-        'yaml',
-      ],
-    })
-  } catch {
-    shikiHighlighter.value = null
-  }
-}
 
 async function loadDocument(options: { silent?: boolean } = {}) {
   if (!options.silent) {
@@ -446,10 +384,8 @@ async function confirmDialogAction() {
   }
 }
 
-async function addTag() {
+async function addTag(name: string) {
   if (!document.value) return
-  const name = tagName.value.trim()
-  if (!name) return
   if (document.value.tags.some((tag) => tag.name === name)) {
     errorMessage.value = '标签已存在'
     toast({ title: '标签已存在', variant: 'destructive' })
@@ -458,7 +394,6 @@ async function addTag() {
 
   await runDetailAction(async () => {
     document.value = await client.documents.addTag(document.value!.id, { name })
-    tagName.value = ''
     toast({ title: '标签已添加', variant: 'success' })
   }, '添加标签失败')
 }
@@ -597,7 +532,7 @@ function handleTextSelection() {
     }
 
     const offsets = getSelectionOffsets(articleContentRef.value, range)
-    if (!offsets || hasAnnotationOverlap(offsets.startOffset, offsets.endOffset)) {
+    if (!offsets || hasAnnotationOverlap(annotations.value, offsets.startOffset, offsets.endOffset)) {
       selectionToolbar.value.visible = false
       selectionDraft.value = null
       if (offsets) toast({ title: '该区域已有高亮', variant: 'destructive' })
@@ -743,6 +678,10 @@ function scrollToCitationRange() {
   element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
+function refreshRuntimeToc() {
+  refreshToc(articleContentRef.value, isIngestSucceeded.value)
+}
+
 async function runDetailAction(action: () => Promise<void>, fallback: string) {
   actionLoading.value = true
   errorMessage.value = ''
@@ -775,199 +714,6 @@ function readingStatusLabel(value: DocumentDetail['readingStatus']) {
 
 function readingStatusClass(value: DocumentDetail['readingStatus']) {
   return value === 'unread' ? 'reading-status-badge is-unread' : 'reading-status-badge'
-}
-
-function aiList(items?: string[] | null) {
-  return items?.filter(Boolean) || []
-}
-
-function refreshRuntimeToc() {
-  disconnectHeadingObserver()
-  tocItems.value = []
-  activeTocId.value = ''
-
-  if (!articleContentRef.value || !isIngestSucceeded.value) return
-
-  const headings = Array.from(
-    articleContentRef.value.querySelectorAll<HTMLElement>('h2, h3'),
-  )
-  const items: TocItem[] = []
-
-  headings.forEach((heading, index) => {
-    const title = normalizeTocTitle(heading.textContent || '')
-    const level = heading.tagName.toLowerCase() === 'h3' ? 3 : 2
-    const id = `heading-${index}`
-    heading.id = id
-    if (title) {
-      items.push({ id, title, level })
-    }
-  })
-
-  if (items.length < 2) return
-
-  tocItems.value = items
-  activeTocId.value = items[0]?.id || ''
-  observeRuntimeHeadings(headings)
-}
-
-function normalizeTocTitle(value: string) {
-  return value.replace(/\s+/g, ' ').trim()
-}
-
-function observeRuntimeHeadings(headings: HTMLElement[]) {
-  if (typeof IntersectionObserver === 'undefined') return
-
-  const scrollRoot = globalThis.document.querySelector<HTMLElement>('.content')
-  headingObserver = new IntersectionObserver(
-    (entries) => {
-      const visibleEntry = entries
-        .filter((entry) => entry.isIntersecting)
-        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
-      if (visibleEntry?.target instanceof HTMLElement) {
-        activeTocId.value = visibleEntry.target.id
-      }
-    },
-    {
-      root: scrollRoot || null,
-      rootMargin: '-80px 0px -70% 0px',
-      threshold: [0, 1],
-    },
-  )
-
-  for (const heading of headings) {
-    headingObserver.observe(heading)
-  }
-}
-
-function disconnectHeadingObserver() {
-  headingObserver?.disconnect()
-  headingObserver = null
-}
-
-function scrollToHeading(id: string) {
-  globalThis.document.getElementById(id)?.scrollIntoView({
-    behavior: 'smooth',
-    block: 'start',
-  })
-}
-
-function applyReaderHighlights(
-  html: string,
-  items: AnnotationDto[],
-  citation: CitationRange | null,
-) {
-  if (!items.length && !citation) return html
-  if (typeof DOMParser === 'undefined') return html
-
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(`<main>${html}</main>`, 'text/html')
-  const root = doc.body.firstElementChild
-  if (!root) return html
-
-  for (const annotation of [...items].sort((a, b) => b.startOffset - a.startOffset)) {
-    wrapTextRange(root, annotation.startOffset, annotation.endOffset, {
-      className: 'reader-annotation-mark',
-      annotationId: annotation.id,
-    })
-  }
-
-  if (citation) {
-    wrapTextRange(root, citation.startOffset, citation.endOffset, {
-      className: 'reader-citation-mark',
-      citation: true,
-    })
-  }
-
-  return root.innerHTML
-}
-
-function wrapTextRange(
-  root: Element,
-  startOffset: number,
-  endOffset: number,
-  options: {
-    className: string
-    annotationId?: string
-    citation?: boolean
-  },
-) {
-  const nodes: Array<{ node: Text; start: number; end: number }> = []
-  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-  let currentOffset = 0
-  let current = walker.nextNode()
-
-  while (current) {
-    const node = current as Text
-    const length = node.data.length
-    nodes.push({ node, start: currentOffset, end: currentOffset + length })
-    currentOffset += length
-    current = walker.nextNode()
-  }
-
-  for (const item of nodes.reverse()) {
-    const localStart = Math.max(startOffset, item.start) - item.start
-    const localEnd = Math.min(endOffset, item.end) - item.start
-    if (localStart < 0 || localEnd > item.node.data.length || localStart >= localEnd) continue
-
-    const range = root.ownerDocument.createRange()
-    range.setStart(item.node, localStart)
-    range.setEnd(item.node, localEnd)
-    const span = root.ownerDocument.createElement('mark')
-    span.className = options.className
-    if (options.annotationId) {
-      span.dataset.annotationId = options.annotationId
-    }
-    if (options.citation) {
-      span.dataset.citationHighlight = 'true'
-    }
-    try {
-      range.surroundContents(span)
-    } catch {
-      // Keep the original text if the browser cannot wrap this range.
-    }
-  }
-}
-
-function getSelectionOffsets(root: HTMLElement, range: Range) {
-  const startRange = globalThis.document.createRange()
-  startRange.selectNodeContents(root)
-  startRange.setEnd(range.startContainer, range.startOffset)
-
-  const endRange = globalThis.document.createRange()
-  endRange.selectNodeContents(root)
-  endRange.setEnd(range.endContainer, range.endOffset)
-
-  const startOffset = startRange.toString().length
-  const endOffset = endRange.toString().length
-  if (endOffset <= startOffset) return null
-  return { startOffset, endOffset }
-}
-
-function hasAnnotationOverlap(startOffset: number, endOffset: number) {
-  return annotations.value.some(
-    (item) => item.startOffset < endOffset && item.endOffset > startOffset,
-  )
-}
-
-function countOccurrencesBefore(text: string, selectedText: string, offset: number) {
-  const before = text.slice(0, offset)
-  if (!selectedText) return 0
-  let count = 0
-  let index = before.indexOf(selectedText)
-  while (index >= 0) {
-    count += 1
-    index = before.indexOf(selectedText, index + selectedText.length)
-  }
-  return count
-}
-
-function normalizeCodeLang(info: string) {
-  const lang = info.trim().split(/\s+/)[0]?.toLowerCase() || 'text'
-  if (lang === 'js') return 'javascript'
-  if (lang === 'ts') return 'typescript'
-  if (lang === 'sh' || lang === 'zsh') return 'shell'
-  if (lang === 'yml') return 'yaml'
-  return lang
 }
 
 function notifyError(error: unknown, fallback: string) {
@@ -1015,31 +761,13 @@ function getErrorMessage(error: unknown, fallback: string) {
         </nav>
       </section>
 
-      <section v-if="document" class="sidebar-section">
-        <div class="sidebar-title">标签管理</div>
-        <div class="sidebar-tag-list">
-          <UiBadge v-for="item in document.tags" :key="item.id" variant="neutral">
-            <Tag :size="12" />
-            {{ item.name }}
-            <button
-              class="badge-delete"
-              :disabled="actionLoading"
-              title="删除标签"
-              type="button"
-              @click="removeTag(item.id)"
-            >
-              <X :size="12" />
-            </button>
-          </UiBadge>
-          <p v-if="document.tags.length === 0" class="sidebar-empty">暂无标签</p>
-        </div>
-        <form class="tag-form" @submit.prevent="addTag">
-          <UiInput v-model="tagName" placeholder="添加标签" />
-          <UiButton size="icon" variant="secondary" :disabled="actionLoading" type="submit">
-            <Plus :size="15" />
-          </UiButton>
-        </form>
-      </section>
+      <TagEditor
+        v-if="document"
+        :tags="document.tags"
+        :disabled="actionLoading"
+        @add="addTag"
+        @remove="removeTag"
+      />
 
       <section v-if="document" class="sidebar-section">
         <div class="sidebar-title">操作</div>
@@ -1254,235 +982,55 @@ function getErrorMessage(error: unknown, fallback: string) {
             ></div>
           </article>
 
-          <aside
-            v-if="isIngestSucceeded && tocItems.length"
-            class="article-toc"
-            aria-label="文章目录"
-          >
-            <p class="article-toc-title">目录</p>
-            <nav class="article-toc-nav">
-              <button
-                v-for="item in tocItems"
-                :key="item.id"
-                class="article-toc-link"
-                :class="[`level-${item.level}`, { active: activeTocId === item.id }]"
-                type="button"
-                @click="scrollToHeading(item.id)"
-              >
-                {{ item.title }}
-              </button>
-            </nav>
-          </aside>
+          <ArticleToc
+            v-if="isIngestSucceeded"
+            :items="tocItems"
+            :active-id="activeTocId"
+            @navigate="scrollToHeading"
+          />
         </div>
       </main>
     </div>
 
-    <div
-      v-if="selectionToolbar.visible"
-      class="selection-toolbar"
-      :style="{ left: `${selectionToolbar.x}px`, top: `${selectionToolbar.y}px` }"
-      @mousedown.prevent
-    >
-      <button type="button" @click="createHighlight(null)">高亮</button>
-      <button type="button" @click="openCreateAnnotationDialog">批注</button>
-    </div>
+    <AnnotationLayer
+      :toolbar="selectionToolbar"
+      :dialog-open="annotationDialogOpen"
+      :editing-annotation="editingAnnotation"
+      :note="annotationNote"
+      :action-loading="annotationActionLoading"
+      @update:dialog-open="annotationDialogOpen = $event"
+      @update:note="annotationNote = $event"
+      @create-highlight="createHighlight(null)"
+      @open-annotation-dialog="openCreateAnnotationDialog"
+      @submit="submitAnnotationDialog"
+    />
 
-    <aside v-if="document" class="ai-drawer" :class="{ open: drawerOpen }">
-      <header class="ai-drawer-header">
-        <div>
-          <p class="kicker">Lumi</p>
-          <h2>辅助阅读</h2>
-        </div>
-        <UiButton variant="ghost" size="icon" title="关闭辅助区" @click="drawerOpen = false">
-          <X :size="16" />
-        </UiButton>
-      </header>
-
-      <div class="drawer-tabs">
-        <UiTabs
-          :model-value="drawerTab"
-          :items="drawerTabs"
-          @update:model-value="(value) => openDrawer(value as DrawerTab)"
-        />
-      </div>
-
-      <div v-if="drawerTab === 'ai'" class="ai-drawer-body">
-        <section class="ai-section">
-          <div class="ai-section-header">
-            <h3>分析状态</h3>
-            <UiBadge variant="neutral">{{ aiStatusLabel }}</UiBadge>
-          </div>
-          <p v-if="!isIngestSucceeded" class="ai-muted">
-            文章解析完成后会自动生成摘要、要点和标签。
-          </p>
-          <p
-            v-else-if="aiAnalysis?.status === 'pending' || aiAnalysis?.status === 'processing'"
-            class="ai-muted"
-          >
-            AI 正在生成结构化阅读卡片。
-          </p>
-          <p v-else-if="aiAnalysis?.status === 'failed'" class="ai-muted">
-            {{ aiAnalysis.errorMessage || 'AI 生成失败，可以稍后重试。' }}
-          </p>
-          <p v-else-if="!aiAnalysis" class="ai-muted">当前文章还没有 AI 分析结果。</p>
-
-          <UiButton
-            v-if="isIngestSucceeded && (!aiAnalysis || aiAnalysis.status === 'failed')"
-            variant="secondary"
-            size="sm"
-            :disabled="aiActionLoading"
-            @click="retryAiAnalysis"
-          >
-            <RefreshCw :size="14" />
-            {{ aiActionLoading ? '处理中...' : '生成 AI 分析' }}
-          </UiButton>
-        </section>
-
-        <section v-if="aiAnalysis?.status === 'succeeded'" class="ai-section">
-          <h3>摘要</h3>
-          <p v-if="aiAnalysis.oneSentenceSummary" class="ai-summary-lead">
-            {{ aiAnalysis.oneSentenceSummary }}
-          </p>
-          <p v-if="aiAnalysis.summary" class="ai-muted">{{ aiAnalysis.summary }}</p>
-
-          <div v-if="aiList(aiAnalysis.keyPoints).length" class="ai-list-block">
-            <h4>关键要点</h4>
-            <ul>
-              <li v-for="item in aiList(aiAnalysis.keyPoints)" :key="item">{{ item }}</li>
-            </ul>
-          </div>
-
-          <div v-if="aiList(aiAnalysis.concepts).length" class="ai-list-block">
-            <h4>核心概念</h4>
-            <div class="article-detail-tags">
-              <UiBadge v-for="item in aiList(aiAnalysis.concepts)" :key="item" variant="neutral">
-                {{ item }}
-              </UiBadge>
-            </div>
-          </div>
-
-          <div v-if="aiList(aiAnalysis.actions).length" class="ai-list-block">
-            <h4>行动项</h4>
-            <ul>
-              <li v-for="item in aiList(aiAnalysis.actions)" :key="item">{{ item }}</li>
-            </ul>
-          </div>
-
-          <div v-if="aiAnalysis.audience" class="ai-list-block">
-            <h4>适合人群</h4>
-            <p class="ai-muted">{{ aiAnalysis.audience }}</p>
-          </div>
-        </section>
-
-        <section class="ai-section ai-chat-section">
-          <div class="ai-section-header">
-            <h3>文章问答</h3>
-            <MessageSquare :size="15" />
-          </div>
-
-          <p v-if="!isIngestSucceeded" class="ai-muted">文章解析完成后即可提问。</p>
-          <p v-else-if="conversationsLoading" class="ai-muted">正在加载问答历史...</p>
-
-          <div v-else class="ai-chat-list">
-            <p v-if="conversations.length === 0" class="ai-muted">还没有问题。</p>
-            <article v-for="item in conversations" :key="item.id" class="ai-chat-item">
-              <h4>{{ item.question }}</h4>
-              <p class="ai-answer">
-                {{ item.answer || (streamingConversationId === item.id ? '正在生成...' : '暂无回答') }}
-              </p>
-              <div v-if="item.citations.length" class="ai-citations">
-                <span v-for="citation in item.citations" :key="citation.index">
-                  依据 {{ citation.index }}
-                </span>
-              </div>
-            </article>
-          </div>
-        </section>
-      </div>
-
-      <div v-else class="ai-drawer-body">
-        <section class="ai-section">
-          <div class="ai-section-header">
-            <h3>高亮与批注</h3>
-            <UiBadge variant="neutral">{{ annotations.length }}</UiBadge>
-          </div>
-          <p v-if="isTrash" class="ai-muted">回收站文章只读，恢复后可以继续编辑批注。</p>
-          <p v-else class="ai-muted">在正文中选中文字，可以创建高亮或批注。</p>
-        </section>
-
-        <section class="ai-section annotation-list-section">
-          <p v-if="annotationsLoading" class="ai-muted">正在加载批注...</p>
-          <p v-else-if="annotations.length === 0" class="ai-muted">还没有高亮或批注。</p>
-          <article v-for="item in sortedAnnotations" v-else :key="item.id" class="annotation-item">
-            <button class="annotation-text" type="button" @click="scrollToAnnotation(item.id)">
-              {{ item.selectedText }}
-            </button>
-            <p v-if="item.note" class="annotation-note">{{ item.note }}</p>
-            <p v-else class="annotation-note muted">未添加批注</p>
-            <div v-if="canEditAnnotations" class="annotation-actions">
-              <UiButton
-                variant="ghost"
-                size="sm"
-                :disabled="Boolean(annotationActionLoading)"
-                @click="openEditAnnotationDialog(item)"
-              >
-                <PencilLine :size="13" />
-                编辑
-              </UiButton>
-              <UiButton
-                variant="ghost"
-                size="sm"
-                :disabled="Boolean(annotationActionLoading)"
-                @click="deleteAnnotation(item)"
-              >
-                <Trash2 :size="13" />
-                删除
-              </UiButton>
-            </div>
-          </article>
-        </section>
-      </div>
-
-      <form v-if="drawerTab === 'ai'" class="ai-question-form" @submit.prevent="askAi">
-        <UiInput
-          v-model="aiQuestion"
-          :disabled="!isIngestSucceeded || Boolean(streamingConversationId)"
-          placeholder="围绕当前文章提问..."
-        />
-        <UiButton
-          type="submit"
-          size="icon"
-          :disabled="!isIngestSucceeded || !aiQuestion.trim() || Boolean(streamingConversationId)"
-        >
-          <MessageSquare :size="15" />
-        </UiButton>
-      </form>
-    </aside>
-
-    <UiDialog
-      :open="annotationDialogOpen"
-      :title="editingAnnotation ? '编辑批注' : '添加批注'"
-      description="批注会绑定到当前选中的正文。"
-      @update:open="annotationDialogOpen = $event"
-    >
-      <form class="dialog-form" @submit.prevent="submitAnnotationDialog">
-        <label class="field-group">
-          <span>批注</span>
-          <textarea
-            v-model="annotationNote"
-            class="ui-input annotation-textarea"
-            maxlength="1000"
-            placeholder="写下这段内容给你的提示..."
-          ></textarea>
-        </label>
-        <div class="dialog-actions">
-          <UiButton variant="ghost" @click="annotationDialogOpen = false">取消</UiButton>
-          <UiButton type="submit" :disabled="Boolean(annotationActionLoading)">
-            {{ annotationActionLoading ? '保存中...' : '保存批注' }}
-          </UiButton>
-        </div>
-      </form>
-    </UiDialog>
+    <AiDrawer
+      v-if="document"
+      :open="drawerOpen"
+      :tab="drawerTab"
+      :ingest-succeeded="isIngestSucceeded"
+      :is-trash="isTrash"
+      :can-edit-annotations="canEditAnnotations"
+      :ai-analysis="aiAnalysis"
+      :ai-status-label="aiStatusLabel"
+      :ai-action-loading="aiActionLoading"
+      :conversations="conversations"
+      :conversations-loading="conversationsLoading"
+      :streaming-conversation-id="streamingConversationId"
+      :ai-question="aiQuestion"
+      :annotations="annotations"
+      :annotations-loading="annotationsLoading"
+      :annotation-action-loading="annotationActionLoading"
+      @update:open="drawerOpen = $event"
+      @update:tab="(value) => openDrawer(value)"
+      @update:ai-question="aiQuestion = $event"
+      @retry-ai-analysis="retryAiAnalysis"
+      @ask-ai="askAi"
+      @edit-annotation="openEditAnnotationDialog"
+      @delete-annotation="deleteAnnotation"
+      @scroll-to-annotation="scrollToAnnotation"
+    />
 
     <UiDialog
       :open="Boolean(confirmDialog)"

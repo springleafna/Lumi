@@ -22,6 +22,7 @@ import {
   toDocumentDetail,
   toDocumentSummary,
 } from './document.mapper';
+import { getErrorMessage } from '../common/error.utils';
 
 const documentInclude = {
   tags: {
@@ -554,9 +555,4 @@ function getGroupCount(value: unknown): number {
   if (typeof count === 'number') return count;
   const allCount = (value as { _all?: unknown })._all;
   return typeof allCount === 'number' ? allCount : 0;
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return '未知错误';
 }

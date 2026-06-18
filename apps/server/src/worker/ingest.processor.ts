@@ -18,11 +18,25 @@ import type {
   IngestQueueJobName,
 } from '../queue/queue.types';
 import { validateHtml } from '../ingest/ingest.validation';
+import { getErrorMessage } from '../common/error.utils';
+import { parseDate } from '../common/date.utils';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
+/**
+ * 消费 lumi-ingest 队列，把占位文档推进为解析完成状态。
+ *
+ * 主要流程：
+ * 1. 抓取或校验 HTML，调用 @lumi/parser 提取正文
+ * 2. 对正文图片做 RustFS 归档（best-effort，对象存储未配置时跳过）
+ * 3. 在事务内更新文档与媒体资产、推进 IngestJob 状态
+ * 4. 清理上一轮归档产生的孤儿对象
+ * 5. 入队 AI 分析与 Embedding 索引
+ *
+ * 失败时按 best-effort 写回失败状态，不阻断队列重试。
+ */
 @Injectable()
 export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(IngestProcessor.name);
@@ -61,6 +75,7 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private async process(job: Job<IngestQueueJobData, unknown, IngestQueueJobName>) {
+    // 先读取占位文档与任务输入；缺少必要信息直接失败，避免无意义的抓取。
     const ingestJob = await this.prisma.ingestJob.findUnique({
       where: { id: job.data.jobId },
       include: { document: true },
@@ -110,6 +125,7 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
           .filter((key): key is string => typeof key === 'string' && key.length > 0),
       );
 
+      // 事务保证文档正文、媒体资产记录与任务状态一起落库，避免半成品状态。
       const document = await this.prisma.$transaction(
         async (tx) => {
           const updatedDocument = await tx.document.update({
@@ -160,6 +176,7 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
           .filter((key) => key && !nextObjectKeys.has(key)),
       );
 
+      // 入库成功后再触发下游 AI 分析与 Embedding 索引；二者各自 best-effort，互不阻塞。
       await this.enqueueAiAnalysis(document.userId, document.id);
       await this.embeddingsService.enqueueDocumentIndexBestEffort(document.userId, document.id);
     } catch (error) {
@@ -310,15 +327,4 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
 
     return response.data;
   }
-}
-
-function parseDate(value?: string): Date | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return '未知错误';
 }

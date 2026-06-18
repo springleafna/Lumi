@@ -8,6 +8,10 @@ import {
 } from '../queue/queue.constants';
 import type { AiAnalysisQueueJobData } from '../queue/queue.types';
 
+/**
+ * 消费 lumi-ai-analysis 队列，对单篇文档执行结构化 AI 分析。
+ * 实际分析逻辑位于 AiService.analyzeDocument，本类只负责 Worker 生命周期与失败日志。
+ */
 @Injectable()
 export class AiAnalysisProcessor implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AiAnalysisProcessor.name);

@@ -1,44 +1,38 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
-  Archive,
-  ArchiveRestore,
   Bot,
-  ExternalLink,
   FileText,
   Globe2,
   Layers3,
   LogOut,
   Plus,
-  RefreshCw,
-  RotateCcw,
   Settings,
   Star,
   Tag,
-  Trash2,
   X,
 } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
 import type {
-  DocumentFacets,
   DocumentReadingStatus,
   DocumentSort,
   DocumentStatus,
   DocumentSummary,
   DocumentType,
 } from '@lumi/shared'
-import UiBadge from '../components/ui/Badge.vue'
 import UiButton from '../components/ui/Button.vue'
 import UiCard from '../components/ui/Card.vue'
 import UiDialog from '../components/ui/Dialog.vue'
 import UiEmptyState from '../components/ui/EmptyState.vue'
-import UiInput from '../components/ui/Input.vue'
 import UiSearchInput from '../components/ui/SearchInput.vue'
 import UiSelect from '../components/ui/Select.vue'
 import UiTabs from '../components/ui/Tabs.vue'
+import ArticleCard from '../components/documents/ArticleCard.vue'
+import ImportDialog from '../components/documents/ImportDialog.vue'
 import { useAuth } from '../composables/useAuth'
 import { useToast } from '../composables/useToast'
+import { useDocumentsQuery } from '../composables/useDocumentsQuery'
 import lumiLogo from '../assets/lumi-logo.svg'
 import { client } from '../lib/client'
 
@@ -52,6 +46,33 @@ type ConfirmDialogState = {
 const router = useRouter()
 const { logout } = useAuth()
 const { toast } = useToast()
+
+const {
+  documents,
+  facets,
+  keyword,
+  status,
+  type,
+  tag,
+  source,
+  readingStatus,
+  favoriteOnly,
+  sort,
+  page,
+  pageSize,
+  total,
+  loading,
+  errorMessage,
+  selectedTagName,
+  activeFilterCount,
+  loadDocuments,
+  applyFilters,
+  clearFilters,
+  refresh,
+  nextPage,
+  prevPage,
+  setErrorHandler,
+} = useDocumentsQuery()
 
 const documentTypes: Array<{ value: DocumentType | ''; label: string }> = [
   { value: '', label: '全部类型' },
@@ -75,62 +96,22 @@ const sortOptions: Array<{ value: DocumentSort; label: string }> = [
   { value: 'updated_asc', label: '最早更新' },
 ]
 
-const documents = ref<DocumentSummary[]>([])
-const facets = ref<DocumentFacets>({ tags: [], sources: [] })
-const keyword = ref('')
-const status = ref<DocumentStatus>('active')
-const type = ref<DocumentType | ''>('')
-const tag = ref('')
-const source = ref('')
-const readingStatus = ref<DocumentReadingStatus | ''>('')
-const favoriteOnly = ref(false)
-const sort = ref<DocumentSort>('created_desc')
-const page = ref(1)
-const pageSize = 6
-const maxCardTagCount = 3
-const total = ref(0)
-const loading = ref(false)
-const actionLoadingId = ref('')
-const errorMessage = ref('')
-const showImportDialog = ref(false)
-const importMode = ref('url')
-const importUrl = ref('')
-const selectedFile = ref<File | null>(null)
-const importLoading = ref(false)
-const confirmDialog = ref<ConfirmDialogState | null>(null)
-const confirmLoading = ref(false)
-let pollingTimer: number | undefined
-
-const statusTabs = computed(() =>
-  statusOptions.map((item) => ({
-    value: item.value,
-    label: item.label,
-  })),
-)
-
-const importTabs = [
-  { value: 'url', label: 'URL' },
-  { value: 'file', label: '文件' },
-]
-
 const readingStatusTabs = [
   { value: '', label: '全部' },
   { value: 'unread', label: '未读' },
   { value: 'read', label: '已读' },
 ]
 
-const selectedTagName = computed(
-  () => facets.value.tags.find((item) => item.id === tag.value)?.name,
-)
+const showImportDialog = ref(false)
+const actionLoadingId = ref('')
+const confirmDialog = ref<ConfirmDialogState | null>(null)
+const confirmLoading = ref(false)
 
-const activeFilterCount = computed(
-  () =>
-    Number(Boolean(keyword.value)) +
-    Number(Boolean(type.value)) +
-    Number(Boolean(tag.value)) +
-    Number(Boolean(source.value)) +
-    Number(Boolean(readingStatus.value)) +
-    Number(favoriteOnly.value),
+const statusTabs = computed(() =>
+  statusOptions.map((item) => ({
+    value: item.value,
+    label: item.label,
+  })),
 )
 
 const pageTitle = computed(() => {
@@ -184,82 +165,15 @@ const emptyState = computed(() => {
   }
 })
 
-const shouldPollDocuments = computed(() =>
-  documents.value.some(
-    (document) =>
-      document.ingestStatus === 'pending' ||
-      document.ingestStatus === 'processing' ||
-      document.aiAnalysisStatus === 'pending' ||
-      document.aiAnalysisStatus === 'processing',
-  ),
-)
-
-onMounted(async () => {
-  await Promise.all([loadDocuments(), loadFacets()])
-  pollingTimer = window.setInterval(() => {
-    if (shouldPollDocuments.value && !loading.value) {
-      void loadDocuments({ silent: true })
-    }
-  }, 4000)
+// 错误处理委托给页面壳的 toast，避免 composable 直接依赖副作用。
+setErrorHandler((error, fallback) => {
+  const message = error instanceof LumiApiError ? error.message : fallback
+  toast({
+    title: fallback,
+    description: message,
+    variant: 'destructive',
+  })
 })
-
-onBeforeUnmount(() => {
-  if (pollingTimer) window.clearInterval(pollingTimer)
-})
-
-async function loadDocuments(options: { silent?: boolean } = {}) {
-  if (!options.silent) {
-    loading.value = true
-  }
-  errorMessage.value = ''
-  try {
-    const result = await client.documents.list({
-      keyword: keyword.value || undefined,
-      status: status.value,
-      type: type.value || undefined,
-      tag: tag.value || undefined,
-      source: source.value || undefined,
-      readingStatus: readingStatus.value || undefined,
-      favorite: favoriteOnly.value || undefined,
-      sort: sort.value,
-      page: page.value,
-      pageSize,
-    })
-    documents.value = result.items
-    total.value = result.total
-  } catch (error) {
-    notifyError(error, '文章列表加载失败')
-  } finally {
-    if (!options.silent) {
-      loading.value = false
-    }
-  }
-}
-
-async function loadFacets() {
-  try {
-    facets.value = await client.documents.facets()
-  } catch (error) {
-    notifyError(error, '筛选项加载失败')
-  }
-}
-
-async function applyFilters() {
-  page.value = 1
-  await loadDocuments()
-}
-
-async function clearFilters() {
-  keyword.value = ''
-  type.value = ''
-  tag.value = ''
-  source.value = ''
-  readingStatus.value = ''
-  favoriteOnly.value = false
-  sort.value = 'created_desc'
-  page.value = 1
-  await loadDocuments()
-}
 
 async function changeStatus(value: string) {
   status.value = value as DocumentStatus
@@ -292,62 +206,8 @@ async function toggleFavoriteFilter() {
   await applyFilters()
 }
 
-async function importDocument() {
-  importLoading.value = true
-  errorMessage.value = ''
-  try {
-    const result = await client.ingest.url({ url: importUrl.value })
-    showImportDialog.value = false
-    importUrl.value = ''
-    toast({
-      title: '导入任务已创建',
-      description: '文章会先进入解析队列，完成后自动生成 AI 摘要和标签。',
-      variant: 'success',
-    })
-    await loadFacets()
-    await router.push(`/documents/${result.document.id}`)
-  } catch (error) {
-    notifyError(error, '导入失败')
-  } finally {
-    importLoading.value = false
-  }
-}
-
-async function importFile() {
-  if (!selectedFile.value) {
-    toast({ title: '请选择文件', variant: 'destructive' })
-    return
-  }
-
-  importLoading.value = true
-  errorMessage.value = ''
-  try {
-    const formData = new FormData()
-    formData.append('file', selectedFile.value)
-    const result = await client.ingest.file(formData)
-    showImportDialog.value = false
-    selectedFile.value = null
-    toast({
-      title: '文件已导入',
-      description: '文档已保存，Lumi 会尝试自动生成 AI 阅读卡片。',
-      variant: 'success',
-    })
-    await loadFacets()
-    await router.push(`/documents/${result.document.id}`)
-  } catch (error) {
-    notifyError(error, '文件导入失败')
-  } finally {
-    importLoading.value = false
-  }
-}
-
-function selectFile(event: Event) {
-  const input = event.target as HTMLInputElement
-  selectedFile.value = input.files?.[0] || null
-}
-
 async function toggleFavorite(document: DocumentSummary) {
-  if (!canEditReadingMarkers(document)) return
+  if (status.value === 'trash' || document.ingestStatus !== 'succeeded') return
   await runDocumentAction(
     document.id,
     document.favoritedAt ? '已取消收藏' : '已收藏',
@@ -424,30 +284,29 @@ async function confirmDialogAction() {
 
 async function runDocumentAction(id: string, successTitle: string, action: () => Promise<void>) {
   actionLoadingId.value = id
-  errorMessage.value = ''
   try {
     await action()
     toast({ title: successTitle, variant: 'success' })
-    await Promise.all([loadDocuments(), loadFacets()])
+    await refresh()
   } catch (error) {
-    notifyError(error, '操作失败')
+    const message = error instanceof LumiApiError ? error.message : '操作失败'
+    toast({
+      title: '操作失败',
+      description: message,
+      variant: 'destructive',
+    })
   } finally {
     actionLoadingId.value = ''
   }
 }
 
-async function nextPage() {
-  page.value += 1
-  await loadDocuments()
-}
-
-async function prevPage() {
-  page.value -= 1
-  await loadDocuments()
-}
-
 function openDocument(document: DocumentSummary) {
   router.push(`/documents/${document.id}`)
+}
+
+function onImported(documentId: string) {
+  void refresh()
+  router.push(`/documents/${documentId}`)
 }
 
 function signOut() {
@@ -456,83 +315,8 @@ function signOut() {
   router.push('/login')
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
-}
-
-function documentTypeLabel(value: DocumentType) {
-  return documentTypes.find((item) => item.value === value)?.label || value
-}
-
-function documentStatusVariant(document: DocumentSummary) {
-  if (document.ingestStatus === 'failed') return 'destructive'
-  if (document.deletedAt) return 'destructive'
-  return 'neutral'
-}
-
-function documentStatusLabel(document: DocumentSummary) {
-  if (document.ingestStatus === 'pending') return '等待解析'
-  if (document.ingestStatus === 'processing') return '解析中'
-  if (document.ingestStatus === 'failed') return '解析失败'
-  if (document.deletedAt) return '回收站'
-  if (document.archivedAt) return '已归档'
-  return ''
-}
-
-function shouldShowDocumentStatus(document: DocumentSummary) {
-  return Boolean(document.deletedAt || document.archivedAt || document.ingestStatus !== 'succeeded')
-}
-
-function documentExcerpt(document: DocumentSummary) {
-  if (document.ingestStatus === 'pending') return '文章已进入导入队列，正在等待解析。'
-  if (document.ingestStatus === 'processing') return '正在提取正文并转换为 Markdown。'
-  if (document.ingestStatus === 'failed') {
-    return document.ingestErrorMessage || '解析失败，可以稍后重试。'
-  }
-  return document.excerpt || '暂无摘要'
-}
-
-function canManageDocument(document: DocumentSummary) {
-  return document.ingestStatus === 'succeeded'
-}
-
-function canEditReadingMarkers(document: DocumentSummary) {
-  return status.value !== 'trash' && document.ingestStatus === 'succeeded'
-}
-
 function readingStatusLabel(value: DocumentSummary['readingStatus']) {
   return value === 'read' ? '已读' : '未读'
-}
-
-function readingStatusClass(value: DocumentSummary['readingStatus']) {
-  return value === 'unread' ? 'reading-status-badge is-unread' : 'reading-status-badge'
-}
-
-function visibleDocumentTags(document: DocumentSummary) {
-  return document.tags.slice(0, maxCardTagCount)
-}
-
-function hasHiddenDocumentTags(document: DocumentSummary) {
-  return document.tags.length > maxCardTagCount
-}
-
-function notifyError(error: unknown, fallback: string) {
-  const message = getErrorMessage(error, fallback)
-  errorMessage.value = message
-  toast({
-    title: fallback,
-    description: message,
-    variant: 'destructive',
-  })
-}
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof LumiApiError ? error.message : fallback
 }
 </script>
 
@@ -707,164 +491,22 @@ function getErrorMessage(error: unknown, fallback: string) {
             </template>
           </UiEmptyState>
 
-          <UiCard
+          <ArticleCard
             v-for="document in documents"
             v-else
             :key="document.id"
-            class="article-card-shell card-interactive"
-          >
-            <article class="article-card">
-              <div class="article-card-header">
-                <button class="article-card-title-button" type="button" @click="openDocument(document)">
-                  <h3 class="article-card-title">{{ document.title }}</h3>
-                </button>
-                <div class="article-card-actions">
-                  <UiButton
-                    v-if="canEditReadingMarkers(document)"
-                    variant="ghost"
-                    size="icon"
-                    :disabled="actionLoadingId === document.id"
-                    :title="document.favoritedAt ? '取消收藏' : '收藏'"
-                    @click.stop="toggleFavorite(document)"
-                  >
-                    <Star :size="15" :class="{ 'is-filled-icon': document.favoritedAt }" />
-                  </UiButton>
-                  <UiButton
-                    v-if="status === 'trash'"
-                    variant="ghost"
-                    size="icon"
-                    :disabled="actionLoadingId === document.id"
-                    title="恢复"
-                    @click="restoreDocument(document)"
-                  >
-                    <RotateCcw :size="15" />
-                  </UiButton>
-                  <UiButton
-                    v-if="status === 'trash'"
-                    variant="ghost"
-                    size="icon"
-                    :disabled="actionLoadingId === document.id"
-                    title="永久删除"
-                    @click="requestPermanentlyDeleteDocument(document)"
-                  >
-                    <Trash2 :size="15" />
-                  </UiButton>
-                  <UiButton
-                    v-if="document.ingestStatus === 'failed'"
-                    variant="ghost"
-                    size="icon"
-                    :disabled="actionLoadingId === document.id"
-                    title="重新解析"
-                    @click="retryIngest(document)"
-                  >
-                    <RefreshCw :size="15" />
-                  </UiButton>
-                  <UiButton
-                    v-if="status === 'archived' && canManageDocument(document)"
-                    variant="ghost"
-                    size="icon"
-                    :disabled="actionLoadingId === document.id"
-                    title="取消归档"
-                    @click="unarchiveDocument(document)"
-                  >
-                    <ArchiveRestore :size="15" />
-                  </UiButton>
-                  <UiButton
-                    v-if="status === 'active' && canManageDocument(document)"
-                    variant="ghost"
-                    size="icon"
-                    :disabled="actionLoadingId === document.id"
-                    title="归档"
-                    @click="archiveDocument(document)"
-                  >
-                    <Archive :size="15" />
-                  </UiButton>
-                  <UiButton
-                    v-if="status !== 'trash'"
-                    variant="ghost"
-                    size="icon"
-                    :disabled="actionLoadingId === document.id"
-                    title="删除"
-                    @click="requestDeleteDocument(document)"
-                  >
-                    <Trash2 :size="15" />
-                  </UiButton>
-                  <a
-                    v-if="document.url"
-                    class="ui-button ui-button--ghost ui-button--size-icon"
-                    :href="document.url"
-                    rel="noreferrer"
-                    target="_blank"
-                    title="打开原文"
-                    @click.stop
-                  >
-                    <ExternalLink :size="15" />
-                  </a>
-                </div>
-              </div>
-
-              <button class="article-card-body" type="button" @click="openDocument(document)">
-                <p class="article-card-excerpt">{{ documentExcerpt(document) }}</p>
-                <div class="article-card-footer">
-                  <div class="article-card-meta">
-                    <span class="article-card-meta-item">{{ document.source || '未知来源' }}</span>
-                    <span class="article-card-meta-item">{{ formatDate(document.createdAt) }}</span>
-                    <span v-if="document.wordCount" class="article-card-meta-item">
-                      {{ document.wordCount }} 字
-                    </span>
-                  </div>
-                  <div class="article-card-tags">
-                    <UiBadge
-                      class="article-card-badge article-card-badge-state"
-                      :class="readingStatusClass(document.readingStatus)"
-                      variant="neutral"
-                    >
-                      {{ readingStatusLabel(document.readingStatus) }}
-                    </UiBadge>
-                    <UiBadge
-                      v-if="shouldShowDocumentStatus(document)"
-                      class="article-card-badge article-card-badge-state"
-                      :variant="documentStatusVariant(document)"
-                    >
-                      {{ documentStatusLabel(document) }}
-                    </UiBadge>
-                    <UiBadge class="article-card-badge article-card-badge-type" variant="strong">
-                      {{ documentTypeLabel(document.type) }}
-                    </UiBadge>
-                    <UiBadge
-                      v-if="document.aiAnalysisStatus === 'pending' || document.aiAnalysisStatus === 'processing'"
-                      class="article-card-badge article-card-badge-ai"
-                      variant="outline"
-                    >
-                      AI 生成中
-                    </UiBadge>
-                    <UiBadge
-                      v-else-if="document.aiAnalysisStatus === 'succeeded'"
-                      class="article-card-badge article-card-badge-ai"
-                      variant="outline"
-                    >
-                      AI 已生成
-                    </UiBadge>
-                    <UiBadge
-                      v-for="item in visibleDocumentTags(document)"
-                      :key="item.id"
-                      class="article-card-badge article-card-badge-tag"
-                      variant="neutral"
-                    >
-                      {{ item.name }}
-                    </UiBadge>
-                    <UiBadge
-                      v-if="hasHiddenDocumentTags(document)"
-                      class="article-card-badge article-card-badge-more"
-                      variant="neutral"
-                    >
-                      ...
-                    </UiBadge>
-                  </div>
-                </div>
-              </button>
-            </article>
-          </UiCard>
+            :document="document"
+            :status="status"
+            :action-loading-id="actionLoadingId"
+            @open="openDocument"
+            @toggle-favorite="toggleFavorite"
+            @retry-ingest="retryIngest"
+            @archive="archiveDocument"
+            @unarchive="unarchiveDocument"
+            @restore="restoreDocument"
+            @request-delete="requestDeleteDocument"
+            @request-permanent-delete="requestPermanentlyDeleteDocument"
+          />
         </section>
 
         <footer class="pagination-bar">
@@ -877,55 +519,10 @@ function getErrorMessage(error: unknown, fallback: string) {
       </main>
     </div>
 
-    <UiDialog
+    <ImportDialog
       v-model:open="showImportDialog"
-      title="导入文章"
-      description="输入 URL，或上传 Markdown / 文本文档。"
-    >
-      <div class="dialog-form">
-        <UiTabs
-          :model-value="importMode"
-          :items="importTabs"
-          @update:model-value="(value) => (importMode = value)"
-        />
-
-        <form v-if="importMode === 'url'" class="dialog-form" @submit.prevent="importDocument">
-          <label class="field-group">
-            <span>URL</span>
-            <UiInput
-              v-model.trim="importUrl"
-              autocomplete="url"
-              placeholder="https://example.com/article"
-            />
-          </label>
-          <div class="dialog-actions">
-            <UiButton variant="ghost" @click="showImportDialog = false">取消</UiButton>
-            <UiButton type="submit" :disabled="importLoading">
-              {{ importLoading ? '导入中...' : '确认导入' }}
-            </UiButton>
-          </div>
-        </form>
-
-        <form v-else class="dialog-form" @submit.prevent="importFile">
-          <label class="field-group">
-            <span>文件</span>
-            <input
-              class="ui-input"
-              type="file"
-              accept=".md,.txt,text/markdown,text/plain"
-              @change="selectFile"
-            />
-          </label>
-          <p class="field-hint">支持 .md / .txt，最大 2MB。</p>
-          <div class="dialog-actions">
-            <UiButton variant="ghost" @click="showImportDialog = false">取消</UiButton>
-            <UiButton type="submit" :disabled="importLoading || !selectedFile">
-              {{ importLoading ? '导入中...' : '导入文件' }}
-            </UiButton>
-          </div>
-        </form>
-      </div>
-    </UiDialog>
+      @imported="onImported"
+    />
 
     <UiDialog
       :open="Boolean(confirmDialog)"

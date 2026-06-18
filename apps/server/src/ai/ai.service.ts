@@ -8,6 +8,7 @@ import {
   toAiConversationDto,
 } from '../documents/document.mapper';
 import { AiProviderService, type ChatMessage } from './ai-provider.service';
+import { getErrorMessage } from '../common/error.utils';
 
 type AnalysisPayload = {
   oneSentenceSummary?: string;
@@ -419,9 +420,4 @@ function toString(value: unknown): string {
 
 function truncate(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}\n\n[内容已截断]` : value;
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return '未知错误';
 }

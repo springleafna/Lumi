@@ -11,6 +11,10 @@ import type {
   EmbeddingQueueJobName,
 } from '../queue/queue.types';
 
+/**
+ * 消费 lumi-embedding 队列，把文档正文分片后写入 pgvector 向量索引。
+ * 实际分片、去重、入库逻辑位于 EmbeddingsService.processEmbeddingJob。
+ */
 @Injectable()
 export class EmbeddingProcessor implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EmbeddingProcessor.name);

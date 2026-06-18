@@ -24,6 +24,7 @@ import {
   MAX_SELECTION_BYTES,
   validateHtml,
 } from './ingest.validation';
+import { getErrorMessage } from '../common/error.utils';
 
 export type UploadedTextFile = {
   originalname: string;
@@ -32,6 +33,13 @@ export type UploadedTextFile = {
   mimetype?: string;
 };
 
+/**
+ * 文章导入入口服务。
+ *
+ * URL / HTML 导入是异步的：先创建占位文档与 IngestJob 并入队，由 Worker
+ * 完成抓取、解析和媒体归档。URL 导入会按规范化 URL 做重复检测；文件与
+ * 选中内容导入则直接产出完成态文档，不走队列。
+ */
 @Injectable()
 export class IngestService {
   constructor(
@@ -436,11 +444,6 @@ function getSourceFromUrl(url: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return '未知错误';
 }
 
 export const documentIncludeForIngest = {

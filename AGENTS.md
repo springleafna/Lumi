@@ -103,6 +103,29 @@ The repository is a pnpm monorepo. Prefer running scripts from the repository ro
 - Toast feedback is provided by `apps/web/src/composables/useToast.ts` and mounted in `App.vue`.
 - Markdown reading styles are in `apps/web/src/style.css` under `.markdown-reader`.
 
+### Web Code Organization (MVP8)
+
+- Frontend components follow a three-layer model:
+  - Global UI components live in `apps/web/src/components/ui` and serve all pages.
+  - Domain components live in `apps/web/src/components/<area>` (for example `document-detail`, `documents`, `knowledge-chat`, `settings`) and are scoped to a page or business concept.
+  - Page shells live in `apps/web/src/views` and only assemble routes, page-level state, and child components; they should not carry large UI fragments.
+- A single `.vue` file should stay under ~500 lines; anything above ~800 should be split.
+- Splitting priority: pure functions (`apps/web/src/lib`) > composables (`apps/web/src/composables`) > domain components > reusable components.
+- Pure DOM algorithms and pure data functions go in `apps/web/src/lib` (no Vue reactivity). Example: `lib/highlight-dom.ts`.
+- Stateful logic with reactivity, lifecycle, or component-instance coupling goes in `apps/web/src/composables/useXxx.ts`. Composables must not depend on `useToast` directly; callers inject error handling.
+- When a page grows large, extract domain components and composables first; keep the page shell focused on assembly and page-level actions.
+
+### Web Style Organization (MVP8)
+
+- Styles follow a three-layer boundary:
+  - Global styles stay in `apps/web/src/style.css`: CSS variables (`:root`), reset rules, shared layout (`.app-shell` / `.sidebar` / `.main` / `.header` / `.content`), and cross-page `.markdown-reader` rules.
+  - UI library styles belong in each `components/ui/*.vue` `<style scoped>` block.
+  - Page and domain styles belong in the corresponding component's `<style scoped>` block.
+- Rules of thumb: a style that serves a single component is scoped; a style used by two or more pages stays global; styles injected via `v-html` (such as `.markdown-reader`) stay global because scoped does not apply.
+- CSS variables are referenced via `var(--xxx)` from any scope; only the variable definitions live in the global layer.
+- Use `:deep()` sparingly for cross-component styling; prefer props or the child component's own scoped styles.
+
+
 ## Key Scripts
 
 ```powershell

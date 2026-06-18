@@ -10,6 +10,7 @@ import type {
 import { AiProviderService, type ChatMessage } from '../ai/ai-provider.service';
 import { EmbeddingsService, type RetrievedChunk } from '../embeddings/embeddings.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { getErrorMessage } from '../common/error.utils';
 
 type SessionWithMessages = {
   id: string;
@@ -50,6 +51,13 @@ type CitationWithRelations = {
   document?: { id: string } | null;
 };
 
+/**
+ * 知识库级 AI 问答服务。
+ *
+ * 问答主流程：用问题检索 Embedding 向量得到相关分片 → 组装 Prompt →
+ * 调用 Chat 模型并 SSE 流式回传答案 → 回填引用来源。会话标题在首条消息
+ * 生成成功后由单独的 Chat 调用异步产出。
+ */
 @Injectable()
 export class KnowledgeChatService {
   constructor(
@@ -513,9 +521,4 @@ function extractJson(value: string): string {
   const end = trimmed.lastIndexOf('}');
   if (start >= 0 && end > start) return trimmed.slice(start, end + 1);
   return trimmed;
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return '未知错误';
 }

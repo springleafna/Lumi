@@ -8,6 +8,7 @@ import type {
 } from '@lumi/shared';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { getErrorMessage } from '../common/error.utils';
 
 const GLOBAL_AI_SETTING_KEY = 'global';
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
@@ -21,6 +22,13 @@ export type RuntimeAiConfig = {
   fingerprint: string;
 };
 
+/**
+ * AI 配置中心服务，管理 Chat 与 Embedding 两套 Provider 配置。
+ *
+ * API key 通过 AES-256-GCM 对称加密后入库，密钥来自
+ * AI_CONFIG_ENCRYPTION_KEY；数据库不存明文。每个 Provider 单独维护密文、
+ * IV 和 GCM tag，清除配置时一并置空。配置指纹用于运行时判断是否变化。
+ */
 @Injectable()
 export class SettingsService {
   constructor(
@@ -394,9 +402,4 @@ export class SettingsService {
       lastTestedAt: input.lastTestedAt?.toISOString() ?? null,
     };
   }
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return '未知错误';
 }
