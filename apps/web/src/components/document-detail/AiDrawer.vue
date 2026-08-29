@@ -1,17 +1,25 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import DOMPurify from 'dompurify'
+import { computed, nextTick, ref, watch } from 'vue'
 import { MessageSquare, PencilLine, RefreshCw, Trash2, X } from 'lucide-vue-next'
 import type {
   AiAnalysisDto,
-  AiConversationDto,
   AnnotationDto,
 } from '@lumi/shared'
 import UiBadge from '../ui/Badge.vue'
 import UiButton from '../ui/Button.vue'
 import UiInput from '../ui/Input.vue'
 import UiTabs from '../ui/Tabs.vue'
+import { useMarkdownRenderer } from '../../composables/useMarkdownRenderer'
 
 type DrawerTab = 'ai' | 'annotations'
+
+type AiExchange = {
+  question: string
+  answer: string
+  streaming: boolean
+  failed: boolean
+}
 
 const props = defineProps<{
   open: boolean
@@ -22,13 +30,12 @@ const props = defineProps<{
   aiAnalysis: AiAnalysisDto | null
   aiStatusLabel: string
   aiActionLoading: boolean
-  conversations: AiConversationDto[]
-  conversationsLoading: boolean
-  streamingConversationId: string
+  aiExchange: AiExchange | null
   aiQuestion: string
   annotations: AnnotationDto[]
   annotationsLoading: boolean
   annotationActionLoading: string
+  activeAnnotationId: string | null
 }>()
 
 const emit = defineEmits<{
@@ -53,6 +60,54 @@ const sortedAnnotations = computed(() =>
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   }),
 )
+
+// 与知识库问答同一套渲染管线：html 关闭 + DOMPurify 双保险。
+const { render: renderAnswerRaw } = useMarkdownRenderer({ html: false })
+const renderedAnswer = computed(() => {
+  const answer = props.aiExchange?.answer
+  return answer ? DOMPurify.sanitize(renderAnswerRaw(answer)) : ''
+})
+
+// 问答区自动滚动：提问即到底，流式期间跟随底部；用户上滑超过阈值则暂停跟随。
+const aiBodyRef = ref<HTMLElement | null>(null)
+const pinnedToBottom = ref(true)
+
+function handleBodyScroll() {
+  const el = aiBodyRef.value
+  if (!el) return
+  pinnedToBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+}
+
+function scrollChatToBottom() {
+  const el = aiBodyRef.value
+  if (el) el.scrollTop = el.scrollHeight
+}
+
+watch(
+  () => props.aiExchange?.question,
+  async (question) => {
+    if (!question) return
+    pinnedToBottom.value = true
+    await nextTick()
+    scrollChatToBottom()
+  },
+)
+
+watch(
+  () => props.aiExchange?.answer,
+  async () => {
+    if (!props.aiExchange?.streaming || !pinnedToBottom.value) return
+    await nextTick()
+    scrollChatToBottom()
+  },
+)
+
+watch([() => props.open, () => props.tab], async ([open, tab]) => {
+  if (open && tab === 'ai' && props.aiExchange) {
+    await nextTick()
+    scrollChatToBottom()
+  }
+})
 
 function aiList(items?: string[] | null) {
   return items?.filter(Boolean) || []
@@ -79,7 +134,12 @@ function aiList(items?: string[] | null) {
       />
     </div>
 
-    <div v-if="tab === 'ai'" class="ai-drawer-body">
+    <div
+      v-if="tab === 'ai'"
+      ref="aiBodyRef"
+      class="ai-drawer-body"
+      @scroll.passive="handleBodyScroll"
+    >
       <section class="ai-section">
         <div class="ai-section-header">
           <h3>分析状态</h3>
@@ -154,21 +214,18 @@ function aiList(items?: string[] | null) {
         </div>
 
         <p v-if="!ingestSucceeded" class="ai-muted">文章解析完成后即可提问。</p>
-        <p v-else-if="conversationsLoading" class="ai-muted">正在加载问答历史...</p>
-
-        <div v-else class="ai-chat-list">
-          <p v-if="conversations.length === 0" class="ai-muted">还没有问题。</p>
-          <article v-for="item in conversations" :key="item.id" class="ai-chat-item">
-            <h4>{{ item.question }}</h4>
-            <p class="ai-answer">
-              {{ item.answer || (streamingConversationId === item.id ? '正在生成...' : '暂无回答') }}
-            </p>
-            <div v-if="item.citations.length" class="ai-citations">
-              <span v-for="citation in item.citations" :key="citation.index">
-                依据 {{ citation.index }}
-              </span>
-            </div>
-          </article>
+        <p v-else-if="!aiExchange" class="ai-muted">
+          输入问题，AI 会基于文章内容即时回答；问答仅保留当前一轮，不会保存历史。
+        </p>
+        <div v-else class="ai-chat-item">
+          <h4>{{ aiExchange.question }}</h4>
+          <div
+            v-if="aiExchange.answer"
+            class="ai-answer-markdown markdown-reader"
+            v-html="renderedAnswer"
+          ></div>
+          <p v-else class="ai-answer">{{ aiExchange.streaming ? '正在生成...' : '暂无回答' }}</p>
+          <p v-if="aiExchange.failed" class="ai-muted">回答生成失败，可以重新提问。</p>
         </div>
       </section>
     </div>
@@ -186,7 +243,14 @@ function aiList(items?: string[] | null) {
       <section class="ai-section annotation-list-section">
         <p v-if="annotationsLoading" class="ai-muted">正在加载批注...</p>
         <p v-else-if="annotations.length === 0" class="ai-muted">还没有高亮或批注。</p>
-        <article v-for="item in sortedAnnotations" v-else :key="item.id" class="annotation-item">
+        <article
+          v-for="item in sortedAnnotations"
+          v-else
+          :key="item.id"
+          class="annotation-item"
+          :class="{ 'is-active': item.id === activeAnnotationId }"
+          :data-annotation-item="item.id"
+        >
           <button class="annotation-text" type="button" @click="emit('scrollToAnnotation', item.id)">
             {{ item.selectedText }}
           </button>
@@ -219,14 +283,14 @@ function aiList(items?: string[] | null) {
     <form v-if="tab === 'ai'" class="ai-question-form" @submit.prevent="emit('askAi')">
       <UiInput
         :model-value="aiQuestion"
-        :disabled="!ingestSucceeded || Boolean(streamingConversationId)"
+        :disabled="!ingestSucceeded || Boolean(aiExchange?.streaming)"
         placeholder="围绕当前文章提问..."
         @update:model-value="(value) => emit('update:aiQuestion', value)"
       />
       <UiButton
         type="submit"
         size="icon"
-        :disabled="!ingestSucceeded || !aiQuestion.trim() || Boolean(streamingConversationId)"
+        :disabled="!ingestSucceeded || !aiQuestion.trim() || Boolean(aiExchange?.streaming)"
       >
         <MessageSquare :size="15" />
       </UiButton>

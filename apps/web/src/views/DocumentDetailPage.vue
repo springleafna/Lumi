@@ -14,11 +14,10 @@ import {
   Star,
   Trash2,
 } from 'lucide-vue-next'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
 import type {
-  AiConversationDto,
   AnnotationDto,
   DocumentDetail,
   DocumentType,
@@ -52,6 +51,14 @@ type ConfirmDialogState = {
 }
 
 type DrawerTab = 'ai' | 'annotations'
+
+// 即时问答：仅保留当前一轮，不读取历史
+type AiExchange = {
+  question: string
+  answer: string
+  streaming: boolean
+  failed: boolean
+}
 
 type SelectionDraft = {
   selectedText: string
@@ -95,11 +102,9 @@ const confirmLoading = ref(false)
 // AI 抽屉状态
 const drawerOpen = ref(false)
 const drawerTab = ref<DrawerTab>('ai')
-const conversations = ref<AiConversationDto[]>([])
-const conversationsLoading = ref(false)
 const aiActionLoading = ref(false)
 const aiQuestion = ref('')
-const streamingConversationId = ref('')
+const aiExchange = ref<AiExchange | null>(null)
 
 // 高亮批注状态
 const annotations = ref<AnnotationDto[]>([])
@@ -111,6 +116,7 @@ const selectionToolbar = ref({ visible: false, x: 0, y: 0 })
 const annotationDialogOpen = ref(false)
 const annotationNote = ref('')
 const editingAnnotation = ref<AnnotationDto | null>(null)
+const activeAnnotationId = ref<string | null>(null)
 
 let pollingTimer: number | undefined
 
@@ -270,9 +276,6 @@ async function loadDocument(options: { silent?: boolean } = {}) {
     await markAsReadingIfNeeded(loaded)
     if (document.value?.ingestStatus === 'succeeded') {
       await loadAnnotations({ silent: true })
-    }
-    if (drawerOpen.value && drawerTab.value === 'ai' && isIngestSucceeded.value) {
-      await loadConversations()
     }
     await nextTick()
     refreshRuntimeToc()
@@ -438,23 +441,8 @@ async function retryAiAnalysis() {
 async function openDrawer(tab: DrawerTab) {
   drawerOpen.value = true
   drawerTab.value = tab
-  if (tab === 'ai' && document.value && isIngestSucceeded.value) {
-    await loadConversations()
-  }
   if (tab === 'annotations' && document.value && isIngestSucceeded.value) {
     await loadAnnotations()
-  }
-}
-
-async function loadConversations() {
-  if (!document.value) return
-  conversationsLoading.value = true
-  try {
-    conversations.value = await client.documents.listAiConversations(document.value.id)
-  } catch (error) {
-    notifyError(error, '问答历史加载失败')
-  } finally {
-    conversationsLoading.value = false
   }
 }
 
@@ -463,19 +451,13 @@ async function askAi() {
   const question = aiQuestion.value.trim()
   if (!question) return
 
-  const draft: AiConversationDto = {
-    id: `draft-${Date.now()}`,
+  const exchange = reactive<AiExchange>({
     question,
     answer: '',
-    citations: [],
-    status: 'processing',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    documentId: document.value.id,
-  }
-
-  conversations.value = [...conversations.value, draft]
-  streamingConversationId.value = draft.id
+    streaming: true,
+    failed: false,
+  })
+  aiExchange.value = exchange
   aiQuestion.value = ''
 
   try {
@@ -483,16 +465,14 @@ async function askAi() {
       document.value.id,
       { question },
       (chunk) => {
-        draft.answer = `${draft.answer || ''}${chunk}`
+        exchange.answer += chunk
       },
     )
-    await loadConversations()
+    exchange.streaming = false
   } catch (error) {
-    draft.status = 'failed'
-    draft.errorMessage = getErrorMessage(error, 'AI 问答失败')
+    exchange.streaming = false
+    exchange.failed = true
     notifyError(error, 'AI 问答失败')
-  } finally {
-    streamingConversationId.value = ''
   }
 }
 
@@ -564,10 +544,10 @@ function handleArticleClick(event: MouseEvent) {
   const marker = target?.closest<HTMLElement>('[data-annotation-id]')
   if (!marker) return
   const annotation = annotations.value.find((item) => item.id === marker.dataset.annotationId)
-  if (annotation) {
-    openDrawer('annotations')
-    scrollToAnnotation(annotation.id)
-  }
+  if (!annotation) return
+  activeAnnotationId.value = annotation.id
+  openDrawer('annotations')
+  void nextTick(() => focusAnnotationInDrawer(annotation.id))
 }
 
 function handleReaderImageError(event: Event) {
@@ -655,12 +635,29 @@ async function submitAnnotationDialog() {
   }
 }
 
+function requestDeleteAnnotation(annotation: AnnotationDto) {
+  if (!document.value || !canEditAnnotations.value) return
+  const preview =
+    annotation.selectedText.length > 40
+      ? `${annotation.selectedText.slice(0, 40)}...`
+      : annotation.selectedText
+  confirmDialog.value = {
+    title: '删除批注',
+    description: `确认删除该批注吗？高亮「${preview}」会一并移除，且不可恢复。`,
+    actionLabel: '删除',
+    run: () => deleteAnnotation(annotation),
+  }
+}
+
 async function deleteAnnotation(annotation: AnnotationDto) {
   if (!document.value || !canEditAnnotations.value) return
   annotationActionLoading.value = annotation.id
   try {
     await client.documents.deleteAnnotation(document.value.id, annotation.id)
     annotations.value = annotations.value.filter((item) => item.id !== annotation.id)
+    if (activeAnnotationId.value === annotation.id) {
+      activeAnnotationId.value = null
+    }
     toast({ title: '高亮已删除', variant: 'success' })
   } catch (error) {
     notifyError(error, '删除高亮失败')
@@ -670,8 +667,37 @@ async function deleteAnnotation(annotation: AnnotationDto) {
 }
 
 function scrollToAnnotation(id: string) {
+  activeAnnotationId.value = id
   const element = globalThis.document.querySelector(`[data-annotation-id="${id}"]`)
-  element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  if (!element) return
+  element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  flashAnnotationMarker(element)
+}
+
+// 抽屉批注列表可能仍在加载，条目未渲染时短暂重试。
+function focusAnnotationInDrawer(id: string, attempts = 5) {
+  const item = globalThis.document.querySelector(`[data-annotation-item="${id}"]`)
+  if (!item) {
+    if (attempts > 0) window.setTimeout(() => focusAnnotationInDrawer(id, attempts - 1), 100)
+    return
+  }
+  const container = item.closest('.ai-drawer-body')
+  if (!container) return
+  const containerRect = container.getBoundingClientRect()
+  const itemRect = item.getBoundingClientRect()
+  const itemTop = itemRect.top - containerRect.top
+  const itemBottom = itemRect.bottom - containerRect.top
+  if (itemTop < 0 || itemBottom > containerRect.height) {
+    container.scrollTop += itemTop - containerRect.height / 2 + itemRect.height / 2
+  }
+}
+
+function flashAnnotationMarker(marker: Element) {
+  marker.classList.remove('is-flashing')
+  // 强制重排，让连续点击同一标记时动画能重新播放。
+  void (marker as HTMLElement).offsetWidth
+  marker.classList.add('is-flashing')
+  window.setTimeout(() => marker.classList.remove('is-flashing'), 1300)
 }
 
 function scrollToCitationRange() {
@@ -1017,20 +1043,19 @@ function getErrorMessage(error: unknown, fallback: string) {
       :ai-analysis="aiAnalysis"
       :ai-status-label="aiStatusLabel"
       :ai-action-loading="aiActionLoading"
-      :conversations="conversations"
-      :conversations-loading="conversationsLoading"
-      :streaming-conversation-id="streamingConversationId"
+      :ai-exchange="aiExchange"
       :ai-question="aiQuestion"
       :annotations="annotations"
       :annotations-loading="annotationsLoading"
       :annotation-action-loading="annotationActionLoading"
+      :active-annotation-id="activeAnnotationId"
       @update:open="drawerOpen = $event"
       @update:tab="(value) => openDrawer(value)"
       @update:ai-question="aiQuestion = $event"
       @retry-ai-analysis="retryAiAnalysis"
       @ask-ai="askAi"
       @edit-annotation="openEditAnnotationDialog"
-      @delete-annotation="deleteAnnotation"
+      @delete-annotation="requestDeleteAnnotation"
       @scroll-to-annotation="scrollToAnnotation"
     />
 

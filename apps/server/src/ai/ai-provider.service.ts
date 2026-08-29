@@ -1,6 +1,7 @@
 import { BadRequestException, forwardRef, Inject, Injectable } from '@nestjs/common';
 import type { RuntimeAiConfig } from '../settings/settings.service';
 import { SettingsService } from '../settings/settings.service';
+import { buildConnectionTestMessages } from './prompts/connection-test';
 
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
@@ -175,14 +176,7 @@ export class AiProviderService {
   }
 
   async testChatConfig(config: RuntimeAiConfig): Promise<void> {
-    await this.chatJsonWithConfig(
-      config,
-      [
-        { role: 'system', content: '你是 Lumi 的连接测试助手。必须只输出 JSON。' },
-        { role: 'user', content: '请输出 {"ok":true}' },
-      ],
-      0,
-    );
+    await this.chatJsonWithConfig(config, buildConnectionTestMessages(), 0);
   }
 
   async testEmbeddingConfig(config: RuntimeAiConfig): Promise<number> {

@@ -54,6 +54,7 @@ pnpm db:generate / db:migrate / db:init-user
 - 拆分优先级：纯函数放 `src/lib`（不含 Vue 响应式）→ 组合式函数放 `src/composables`（不得直接 import `useToast`，错误处理由调用方注入）→ 领域组件 → 可复用组件。
 - 样式：`src/style.css` 保留 CSS 变量（`:root`）、reset、共享布局和 `.markdown-reader`（`v-html` 注入的内容必须用全局样式）。只服务单个组件的样式放它自己的 `<style scoped>`；被两个及以上页面共用的样式放全局。优先用 props 传递，少用 `:deep()`。
 - 文档列表：阅读状态和收藏筛选在搜索工具栏；不要在卡片底部重复加收藏角标。
+- 文章详情页：AI 问答是即时问答，抽屉只显示当前一轮、不读取历史（服务端 `AiConversation` 仍照常落库），回答按 Markdown 渲染（与知识库问答共用 `useMarkdownRenderer({ html: false })` + DOMPurify 管线）。服务端单文档问答不做检索，直接把正文全文放进 prompt（超长按 `MAX_ARTICLE_CHARS` 截断），不要往回加片段检索。批注为双向定位：点正文高亮会在抽屉列表中选中并滚动到对应条目，点列表条目会滚动正文并短暂闪烁标记。
 
 ## 扩展
 
@@ -65,5 +66,6 @@ pnpm db:generate / db:migrate / db:init-user
 - DTO 变更先加在 `packages/shared`，再同步 `api-client` / server / web。
 - web 和扩展统一走 `@lumi/api-client`，不要直接裸写 axios。
 - API 端点（documents、ingest、settings/ai、embedding-jobs、knowledge-chat）以 `packages/api-client` 和服务端控制器为准。
+- AI 提示词统一放 `apps/server/src/ai/prompts/`（按用途一个文件，导出 `buildXxxMessages`），服务代码只负责引入调用，不要把提示词内嵌回业务逻辑；长文本截断统一用 `common/text.utils.ts` 的 `truncate`。
 - 可复用的 Web 控件放 `apps/web/src/components/ui`。
 - 功能改动不要夹带无关重构。

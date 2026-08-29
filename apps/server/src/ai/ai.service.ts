@@ -1,14 +1,17 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Response } from 'express';
-import type { AiCitationDto, CreateAiConversationRequest } from '@lumi/shared';
+import type { CreateAiConversationRequest } from '@lumi/shared';
+import { AiProviderService } from './ai-provider.service';
+import { buildAnalysisMessages } from './prompts/analysis';
+import { buildDocumentQuestionMessages } from './prompts/document-question';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
 import {
   toAiAnalysisDto,
   toAiConversationDto,
 } from '../documents/document.mapper';
-import { AiProviderService, type ChatMessage } from './ai-provider.service';
 import { getErrorMessage } from '../common/error.utils';
+import { truncate } from '../common/text.utils';
 
 type AnalysisPayload = {
   oneSentenceSummary?: string;
@@ -168,13 +171,11 @@ export class AiService {
     }
 
     const provider = await this.providerService.getChatConfig();
-    const citations = findRelevantCitations(document.contentText || document.markdown, question);
     const conversation = await this.prisma.aiConversation.create({
       data: {
         userId,
         documentId,
         question,
-        citations,
         provider: provider.providerPreset,
         model: provider.model,
         status: 'processing',
@@ -191,10 +192,10 @@ export class AiService {
         where: { documentId },
       });
       for await (const chunk of this.providerService.streamChat(
-        buildQuestionMessages({
+        buildDocumentQuestionMessages({
           title: document.title,
           question,
-          citations,
+          articleText: document.contentText || document.markdown || '',
           analysisSummary: analysis?.summary || analysis?.oneSentenceSummary || undefined,
         }),
       )) {
@@ -274,65 +275,6 @@ export class AiService {
   }
 }
 
-function buildAnalysisMessages(input: {
-  title: string;
-  source?: string | null;
-  author?: string | null;
-  excerpt?: string | null;
-  contentText?: string | null;
-}): ChatMessage[] {
-  return [
-    {
-      role: 'system',
-      content:
-        '你是 Lumi 的中文阅读助手。请只基于用户提供的文章内容分析，不要编造。必须只输出 JSON，不要输出 Markdown。',
-    },
-    {
-      role: 'user',
-      content: [
-        '请对下面文章生成结构化阅读卡片，字段必须包含：oneSentenceSummary, summary, keyPoints, concepts, actions, audience, tags。',
-        '要求：摘要、要点、标签均使用中文；tags 为 1-3 个短中文标签；keyPoints/concepts/actions 使用字符串数组。',
-        `标题：${input.title}`,
-        `来源：${input.source || '未知'}`,
-        `作者：${input.author || '未知'}`,
-        `摘要：${input.excerpt || '无'}`,
-        `正文：${truncate(input.contentText || '', 18000)}`,
-      ].join('\n\n'),
-    },
-  ];
-}
-
-function buildQuestionMessages(input: {
-  title: string;
-  question: string;
-  citations: AiCitationDto[];
-  analysisSummary?: string;
-}): ChatMessage[] {
-  const citationText = input.citations.length
-    ? input.citations.map((item) => `[${item.index}] ${item.text}`).join('\n\n')
-    : '没有命中足够相关的原文片段。';
-
-  return [
-    {
-      role: 'system',
-      content:
-        '你是 Lumi 的中文阅读问答助手。只能基于当前文章依据片段回答。依据片段保留原文，回答使用中文。如果依据不足，要明确说明当前文章没有足够信息。',
-    },
-    {
-      role: 'user',
-      content: [
-        `文章标题：${input.title}`,
-        input.analysisSummary ? `已有摘要：${input.analysisSummary}` : '',
-        `用户问题：${input.question}`,
-        `依据片段：\n${citationText}`,
-        '请给出简洁但有帮助的中文回答，并在回答末尾列出使用的依据编号。',
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
-    },
-  ];
-}
-
 function normalizeAnalysisPayload(raw: string): AnalysisPayload {
   const value = JSON.parse(extractJson(raw)) as AnalysisPayload;
   return {
@@ -355,53 +297,6 @@ function extractJson(value: string): string {
   return trimmed;
 }
 
-function findRelevantCitations(text: string, question: string): AiCitationDto[] {
-  const chunks = chunkText(text);
-  const questionTerms = toTerms(question);
-  return chunks
-    .map((chunk, index) => ({
-      index: index + 1,
-      text: chunk,
-      score: scoreChunk(chunk, questionTerms),
-    }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
-}
-
-function chunkText(text: string): string[] {
-  const normalized = text.replace(/\r/g, '').trim();
-  if (!normalized) return [];
-  const paragraphs = normalized
-    .split(/\n{2,}|(?<=[。！？.!?])\s+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  const chunks: string[] = [];
-  let current = '';
-  for (const paragraph of paragraphs) {
-    if ((current + paragraph).length > 900 && current) {
-      chunks.push(current.trim());
-      current = '';
-    }
-    current += `${paragraph}\n`;
-  }
-  if (current.trim()) chunks.push(current.trim());
-  return chunks.slice(0, 80);
-}
-
-function scoreChunk(chunk: string, terms: string[]): number {
-  if (!terms.length) return 0;
-  const lower = chunk.toLowerCase();
-  const hits = terms.filter((term) => lower.includes(term.toLowerCase())).length;
-  return hits / terms.length;
-}
-
-function toTerms(value: string): string[] {
-  const words = value.match(/[A-Za-z0-9]{2,}|[\u3400-\u9fff]/g) || [];
-  return Array.from(new Set(words)).slice(0, 40);
-}
-
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map(toString).filter(Boolean).slice(0, 12);
@@ -416,8 +311,4 @@ function normalizeTags(value: unknown): string[] {
 
 function toString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function truncate(value: string, maxLength: number): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}\n\n[内容已截断]` : value;
 }

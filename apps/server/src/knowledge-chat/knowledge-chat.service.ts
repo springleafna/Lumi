@@ -7,10 +7,13 @@ import type {
   KnowledgeChatSessionDto,
   UpdateKnowledgeChatSessionRequest,
 } from '@lumi/shared';
-import { AiProviderService, type ChatMessage } from '../ai/ai-provider.service';
+import { AiProviderService } from '../ai/ai-provider.service';
+import { buildKnowledgeChatMessages } from '../ai/prompts/knowledge-chat';
+import { buildSessionTitleMessages } from '../ai/prompts/session-title';
 import { EmbeddingsService, type RetrievedChunk } from '../embeddings/embeddings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { getErrorMessage } from '../common/error.utils';
+import { truncate } from '../common/text.utils';
 
 type SessionWithMessages = {
   id: string;
@@ -387,21 +390,7 @@ export class KnowledgeChatService {
   private async generateTitleBestEffort(sessionId: string, question: string, answer: string) {
     try {
       const raw = await this.aiProviderService.chatJson(
-        [
-          {
-            role: 'system',
-            content:
-              '你是 Lumi 的会话标题助手。请根据用户问题和回答生成一个 6-20 个中文字符的标题，只输出 JSON。',
-          },
-          {
-            role: 'user',
-            content: [
-              '请输出 {"title":"标题"}。',
-              `问题：${question}`,
-              `回答：${truncate(answer, 1200)}`,
-            ].join('\n\n'),
-          },
-        ],
+        buildSessionTitleMessages({ question, answer }),
         0,
       );
       const payload = JSON.parse(extractJson(raw)) as { title?: string };
@@ -450,42 +439,6 @@ export class KnowledgeChatService {
     response.write(`event: ${event}\n`);
     response.write(`data: ${JSON.stringify(data)}\n\n`);
   }
-}
-
-function buildKnowledgeChatMessages(input: {
-  question: string;
-  history: string;
-  sources: CitedSource[];
-}): ChatMessage[] {
-  const citationText = input.sources.length
-    ? input.sources
-        .map((source, index) => {
-          const fragments = source.chunks
-            .map((chunk) => truncate(chunk.content, 900))
-            .join('\n---\n');
-          return `[${index + 1}] 标题：${source.documentTitle}\n片段：${fragments}`;
-        })
-        .join('\n\n')
-    : '没有召回到足够相关的知识库片段。';
-
-  return [
-    {
-      role: 'system',
-      content:
-        '你是 Lumi 的知识库问答助手。只能基于提供的知识库片段回答，默认使用中文。不要使用模型常识自由发挥。资料不足时必须明确说明“知识库中没有足够依据回答这个问题”。编号 [1] [2] 各对应一篇文章，同一编号下可能有多段内容；回答中只标注实际参考了的编号，没有用到的来源不要标注。',
-    },
-    {
-      role: 'user',
-      content: [
-        input.history ? `当前会话上下文：\n${input.history}` : '',
-        `用户问题：${input.question}`,
-        `知识库片段：\n${citationText}`,
-        '请给出可信、克制的中文回答。若使用了片段，请在相关句子后标注对应的来源编号。',
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
-    },
-  ];
 }
 
 /**
@@ -585,10 +538,6 @@ function toCitationDto(citation: CitationWithRelations): KnowledgeChatCitationDt
     sourceDeleted: Boolean(citation.documentId && !citation.document),
     createdAt: citation.createdAt.toISOString(),
   };
-}
-
-function truncate(value: string, maxLength: number) {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}\n[已截断]` : value;
 }
 
 function extractJson(value: string): string {
