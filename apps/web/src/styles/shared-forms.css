@@ -1,0 +1,113 @@
+/* shared-forms.css — 跨页面表单模式（dialog-form/dialog-actions/field-group/inline-alert）与登录页 */
+
+.dialog-form,
+.auth-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.field-group {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.inline-alert {
+  margin-bottom: var(--space-4);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  color: #991b1b;
+  background: var(--error-bg);
+  font-size: var(--text-sm);
+}
+
+.auth-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: var(--space-6);
+  background: var(--bg-secondary);
+}
+
+.auth-card {
+  width: min(100%, 420px);
+  padding: var(--space-8);
+  box-shadow: var(--shadow-md);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.auth-brand h1 {
+  margin: var(--space-1) 0 0;
+  color: var(--fg-primary);
+  font-size: var(--text-2xl);
+}
+
+.kicker {
+  margin: 0;
+  color: var(--fg-tertiary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.auth-copy {
+  margin: var(--space-5) 0 0;
+  color: var(--fg-tertiary);
+}
+
+.auth-form {
+  margin-top: var(--space-6);
+}
+
+.auth-submit {
+  width: 100%;
+}
+
+.tag-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.badge-delete {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0;
+  color: inherit;
+  background: transparent;
+}
+
+.badge-delete:hover {
+  background: rgba(24, 24, 27, 0.08);
+}
+
+.is-filled-icon {
+  fill: currentColor;
+}
+
+.field-hint {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--fg-tertiary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}

@@ -1,0 +1,77 @@
+/* annotation-list.css — AI 抽屉批注页签：drawer-tabs 与批注列表 */
+
+.drawer-tabs {
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-3) var(--space-5);
+}
+
+.drawer-tabs .ui-tabs {
+  width: 100%;
+}
+
+.drawer-tabs .ui-tab {
+  flex: 1;
+  justify-content: center;
+}
+
+.annotation-list-section {
+  gap: var(--space-3);
+}
+
+.annotation-item {
+  display: grid;
+  gap: var(--space-2);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--bg-secondary);
+  transition: border-color 0.15s ease;
+}
+
+.annotation-item.is-active {
+  border-color: var(--border-focus);
+}
+
+.annotation-text {
+  display: -webkit-box;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  color: var(--fg-primary);
+  background: transparent;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-normal);
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.annotation-text:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.annotation-note {
+  margin: 0;
+  color: var(--fg-tertiary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  white-space: pre-wrap;
+}
+
+.annotation-note.muted {
+  color: var(--fg-muted);
+}
+
+.annotation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.annotation-textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: var(--leading-normal);
+}

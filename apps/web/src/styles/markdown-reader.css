@@ -1,0 +1,135 @@
+/* markdown-reader.css — .markdown-reader：v-html 注入的阅读区样式（必须全局） */
+
+.markdown-reader h1,
+.markdown-reader h2,
+.markdown-reader h3,
+.markdown-reader h4 {
+  scroll-margin-top: var(--space-8);
+  color: var(--fg-primary);
+  letter-spacing: 0;
+}
+
+.markdown-reader h1 {
+  margin: var(--space-10) 0 var(--space-4);
+  font-size: var(--text-3xl);
+}
+
+.markdown-reader h2 {
+  margin: var(--space-8) 0 var(--space-4);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+}
+
+.markdown-reader h3 {
+  margin: var(--space-6) 0 var(--space-3);
+  font-size: var(--text-xl);
+  font-weight: 600;
+}
+
+.markdown-reader p,
+.markdown-reader ul,
+.markdown-reader ol,
+.markdown-reader blockquote,
+.markdown-reader pre,
+.markdown-reader table {
+  margin: var(--space-4) 0;
+}
+
+.markdown-reader a {
+  color: var(--fg-primary);
+  text-decoration: underline;
+  text-decoration-color: rgba(24, 24, 27, 0.35);
+  text-underline-offset: 3px;
+}
+
+.markdown-reader blockquote {
+  border-left: 3px solid var(--fg-tertiary);
+  padding: var(--space-4) var(--space-6);
+  color: var(--fg-tertiary);
+  background: var(--bg-secondary);
+  font-style: italic;
+}
+
+.markdown-reader code {
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+  background: var(--bg-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.markdown-reader pre {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  background: var(--bg-secondary);
+}
+
+.markdown-reader pre code {
+  border: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+}
+
+.markdown-reader img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+}
+
+.markdown-reader img.is-broken {
+  display: none;
+}
+
+.markdown-reader figure {
+  margin: var(--space-6) 0;
+}
+
+.markdown-reader figure img {
+  margin: 0 auto;
+}
+
+.markdown-reader figcaption {
+  margin-top: var(--space-2);
+  color: var(--fg-tertiary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  text-align: center;
+}
+
+.reader-image-fallback {
+  display: inline-flex;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  color: var(--fg-tertiary);
+  background: var(--bg-secondary);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.markdown-reader ul,
+.markdown-reader ol {
+  padding-left: var(--space-6);
+}
+
+.markdown-reader li {
+  margin-bottom: var(--space-2);
+}
+
+.markdown-reader table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.markdown-reader th,
+.markdown-reader td {
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-2);
+  text-align: left;
+}

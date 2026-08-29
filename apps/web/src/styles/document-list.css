@@ -1,0 +1,229 @@
+/* document-list.css — 文章列表页：工具栏、卡片网格、分页条 */
+
+.article-list-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.article-list-title {
+  margin: 0;
+  color: var(--fg-primary);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+}
+
+.article-list-subtitle {
+  margin: var(--space-2) 0 0;
+  color: var(--fg-tertiary);
+  font-size: var(--text-sm);
+}
+
+.article-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.article-search-form {
+  display: flex;
+  width: min(100%, 420px);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.article-search-form .ui-search {
+  flex: 1;
+}
+
+.article-list-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.favorite-filter-button.is-active {
+  color: var(--bg-primary);
+  background: var(--fg-primary);
+}
+
+.article-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--space-4);
+}
+
+.article-card-shell {
+  min-width: 0;
+}
+
+.card-interactive {
+  cursor: pointer;
+  transition:
+    border-color 150ms cubic-bezier(0.2, 0, 0, 1),
+    box-shadow 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.card-interactive:hover {
+  border-color: var(--fg-tertiary);
+  box-shadow: var(--shadow-md);
+}
+
+.article-card {
+  display: flex;
+  min-height: 214px;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+
+.article-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.article-card-title-button,
+.article-card-body {
+  border: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.article-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.article-card-title {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--fg-primary);
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.article-card-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-1);
+}
+
+.article-card-actions .ui-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+}
+
+.article-card-excerpt {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--fg-tertiary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.article-card-footer {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: auto;
+  min-width: 0;
+}
+
+.article-card-meta {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.article-card-meta-item {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.article-card-tags {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.article-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.article-card-badge {
+  max-width: 112px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.article-card-badge-type {
+  color: var(--bg-primary);
+  background: var(--fg-primary);
+}
+
+.article-card-badge-ai {
+  border: 1px solid var(--border);
+  color: var(--fg-primary);
+  background: var(--bg-primary);
+  font-weight: 600;
+}
+
+.article-card-badge-tag {
+  color: var(--fg-tertiary);
+  background: var(--bg-secondary);
+  font-weight: 500;
+}
+
+.article-card-badge-state,
+.article-card-badge-type,
+.article-card-badge-ai,
+.article-card-badge-more {
+  flex-shrink: 0;
+}
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+  color: var(--fg-tertiary);
+  font-size: var(--text-sm);
+}

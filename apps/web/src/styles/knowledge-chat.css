@@ -1,0 +1,369 @@
+/* knowledge-chat.css — 知识库问答页（含与 AI 抽屉共用的回答 markdown 样式） */
+
+.knowledge-sidebar {
+  background: var(--bg-secondary);
+}
+
+.knowledge-session-section {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.knowledge-session-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.knowledge-session-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--fg-tertiary);
+  font-size: var(--text-sm);
+}
+
+.knowledge-session-list {
+  display: grid;
+  gap: var(--space-1);
+  overflow-y: auto;
+  padding-right: var(--space-1);
+}
+
+.knowledge-session-button {
+  display: grid;
+  width: 100%;
+  gap: 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  color: var(--fg-tertiary);
+  background: transparent;
+  text-align: left;
+}
+
+.knowledge-session-button:hover,
+.knowledge-session-item.active .knowledge-session-button {
+  color: var(--fg-primary);
+  background: var(--bg-primary);
+}
+
+.knowledge-session-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.knowledge-session-button small {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.knowledge-session-item {
+  position: relative;
+}
+
+.knowledge-session-item .knowledge-session-button {
+  padding-right: 56px;
+}
+
+.knowledge-session-item-actions {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.knowledge-session-item:hover .knowledge-session-item-actions,
+.knowledge-session-item:focus-within .knowledge-session-item-actions {
+  opacity: 1;
+}
+
+.knowledge-session-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.knowledge-session-icon-button:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+}
+
+.knowledge-session-icon-button:disabled {
+  color: var(--fg-disabled);
+  cursor: not-allowed;
+}
+
+.knowledge-content {
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: var(--space-5);
+}
+
+.knowledge-chat-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-y: auto;
+  padding-right: var(--space-1);
+}
+
+.knowledge-chat-titlebar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  background: var(--bg-primary);
+}
+
+.knowledge-chat-titlebar h2 {
+  margin: 0;
+  color: var(--fg-primary);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+}
+
+.knowledge-chat-titlebar p {
+  margin: var(--space-1) 0 0;
+  color: var(--fg-tertiary);
+  font-size: var(--text-sm);
+}
+
+.knowledge-title-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.knowledge-loading-card {
+  min-height: 220px;
+}
+
+.knowledge-message-list {
+  display: grid;
+  align-content: start;
+  gap: var(--space-5);
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+  padding-bottom: var(--space-2);
+}
+
+.knowledge-message {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.knowledge-question {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-2);
+}
+
+.knowledge-question span,
+.knowledge-answer-header span {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.knowledge-question p {
+  max-width: min(680px, 88%);
+  margin: 0;
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  color: var(--bg-primary);
+  background: var(--fg-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.knowledge-answer {
+  display: grid;
+  gap: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  background: var(--bg-primary);
+}
+
+.knowledge-answer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.knowledge-answer-header > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.knowledge-answer-text {
+  margin: 0;
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* 知识库问答与文章详情抽屉共用的紧凑版回答 Markdown 样式 */
+.knowledge-answer-markdown.markdown-reader,
+.ai-answer-markdown.markdown-reader {
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
+}
+
+.knowledge-answer-markdown.markdown-reader > :first-child,
+.ai-answer-markdown.markdown-reader > :first-child {
+  margin-top: 0;
+}
+
+.knowledge-answer-markdown.markdown-reader > :last-child,
+.ai-answer-markdown.markdown-reader > :last-child {
+  margin-bottom: 0;
+}
+
+.knowledge-answer-markdown.markdown-reader h1,
+.knowledge-answer-markdown.markdown-reader h2,
+.knowledge-answer-markdown.markdown-reader h3,
+.knowledge-answer-markdown.markdown-reader h4,
+.ai-answer-markdown.markdown-reader h1,
+.ai-answer-markdown.markdown-reader h2,
+.ai-answer-markdown.markdown-reader h3,
+.ai-answer-markdown.markdown-reader h4 {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-base);
+  line-height: var(--leading-tight);
+}
+
+.knowledge-answer-markdown.markdown-reader p,
+.knowledge-answer-markdown.markdown-reader ul,
+.knowledge-answer-markdown.markdown-reader ol,
+.knowledge-answer-markdown.markdown-reader blockquote,
+.knowledge-answer-markdown.markdown-reader pre,
+.knowledge-answer-markdown.markdown-reader table,
+.ai-answer-markdown.markdown-reader p,
+.ai-answer-markdown.markdown-reader ul,
+.ai-answer-markdown.markdown-reader ol,
+.ai-answer-markdown.markdown-reader blockquote,
+.ai-answer-markdown.markdown-reader pre,
+.ai-answer-markdown.markdown-reader table {
+  margin: var(--space-3) 0;
+}
+
+.knowledge-answer-markdown.markdown-reader blockquote,
+.ai-answer-markdown.markdown-reader blockquote {
+  padding: var(--space-3) var(--space-4);
+}
+
+.knowledge-answer-markdown.markdown-reader pre,
+.ai-answer-markdown.markdown-reader pre {
+  max-width: 100%;
+  padding: var(--space-3);
+}
+
+.knowledge-answer-markdown.markdown-reader table,
+.ai-answer-markdown.markdown-reader table {
+  display: block;
+  overflow-x: auto;
+}
+
+.knowledge-citation-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.knowledge-citation-card {
+  display: grid;
+  width: 100%;
+  gap: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  color: inherit;
+  background: var(--bg-tertiary);
+  text-align: left;
+}
+
+.knowledge-citation-card:hover:not(:disabled) {
+  border-color: var(--fg-tertiary);
+  background: var(--bg-secondary);
+}
+
+.knowledge-citation-title,
+.knowledge-citation-meta,
+.knowledge-citation-excerpt {
+  min-width: 0;
+}
+
+.knowledge-citation-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--fg-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.knowledge-citation-meta {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.knowledge-citation-excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--fg-tertiary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.knowledge-message-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.knowledge-question-form {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+  padding-top: var(--space-4);
+}

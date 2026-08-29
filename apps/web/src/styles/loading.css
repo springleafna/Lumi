@@ -1,0 +1,37 @@
+/* loading.css — 骨架屏 loading-card/loading-line + shimmer 动画 */
+
+.loading-card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+
+.loading-line {
+  display: block;
+  width: 72%;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f4f4f5, #e4e4e7, #f4f4f5);
+  background-size: 180% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+.loading-line.short {
+  width: 42%;
+}
+
+.loading-line.soft {
+  width: 88%;
+  height: 44px;
+  border-radius: var(--radius-md);
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 0 0;
+  }
+
+  to {
+    background-position: -180% 0;
+  }
+}

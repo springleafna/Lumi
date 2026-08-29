@@ -52,7 +52,7 @@ pnpm db:generate / db:migrate / db:init-user
 - 图标统一使用已安装的 `lucide-vue-next` 图标库，不引入其他图标方案。
 - 三层结构：`components/ui`（全局）→ `components/<area>`（领域组件，如 `document-detail`、`documents`、`knowledge-chat`、`settings`）→ `views`（页面壳，只做组装）。单个 `.vue` 控制在 ~500 行内（~800 为硬上限）。
 - 拆分优先级：纯函数放 `src/lib`（不含 Vue 响应式）→ 组合式函数放 `src/composables`（不得直接 import `useToast`，错误处理由调用方注入）→ 领域组件 → 可复用组件。
-- 样式：`src/style.css` 保留 CSS 变量（`:root`）、reset、共享布局和 `.markdown-reader`（`v-html` 注入的内容必须用全局样式）。只服务单个组件的样式放它自己的 `<style scoped>`；被两个及以上页面共用的样式放全局。优先用 props 传递，少用 `:deep()`。
+- 样式：全局 CSS 按页面/组件拆分在 `src/styles/`（base / ui / layout / document-list / document-detail / markdown-reader / ai-drawer / shared-forms / reader-marks / settings / knowledge-chat / annotation-list / loading / responsive），`src/style.css` 仅作 `@import` 入口，按上述顺序保持层叠不变，`responsive.css` 必须最后。`v-html` 注入的内容（`.markdown-reader`、高亮/引用标记）必须用全局样式。新增样式进对应拆分文件；只服务单个组件的新控件优先放它自己的 `<style scoped>`。优先用 props 传递，少用 `:deep()`。
 - 文档列表：阅读状态和收藏筛选在搜索工具栏；不要在卡片底部重复加收藏角标。
 - 文章详情页：AI 问答是即时问答，抽屉只显示当前一轮、不读取历史（服务端 `AiConversation` 仍照常落库），回答按 Markdown 渲染（与知识库问答共用 `useMarkdownRenderer({ html: false })` + DOMPurify 管线）。服务端单文档问答不做检索，直接把正文全文放进 prompt（超长按 `MAX_ARTICLE_CHARS` 截断），不要往回加片段检索。批注为双向定位：点正文高亮会在抽屉列表中选中并滚动到对应条目，点列表条目会滚动正文并短暂闪烁标记。
 

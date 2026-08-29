@@ -1,0 +1,67 @@
+/* reader-marks.css — 划词工具条与正文高亮/引用标记（v-html 注入，必须全局） */
+
+
+.selection-toolbar {
+  position: fixed;
+  z-index: 55;
+  display: inline-flex;
+  gap: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1);
+  background: var(--fg-primary);
+  box-shadow: var(--shadow-lg);
+  transform: translateX(-50%);
+}
+
+.selection-toolbar button {
+  min-height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
+  color: var(--bg-primary);
+  background: transparent;
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.selection-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.reader-annotation-mark {
+  border-radius: 3px;
+  padding: 0 2px;
+  background: #e7e5e4;
+  color: inherit;
+  cursor: pointer;
+}
+
+.reader-annotation-mark:hover {
+  background: #d6d3d1;
+}
+
+.reader-annotation-mark.is-flashing {
+  animation: annotation-mark-flash 1.2s ease;
+}
+
+@keyframes annotation-mark-flash {
+  0%,
+  100% {
+    background: #e7e5e4;
+    box-shadow: none;
+  }
+
+  30% {
+    background: #d6d3d1;
+    box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.16);
+  }
+}
+
+.reader-citation-mark {
+  border-radius: 3px;
+  padding: 0 2px;
+  background: #f4f4f5;
+  box-shadow: inset 0 -2px 0 #18181b;
+  color: inherit;
+}
