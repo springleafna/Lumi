@@ -248,7 +248,9 @@ watch(citationRange, async () => {
   scrollToCitationRange()
 })
 
-watch(renderedMarkdown, async () => {
+// loading 置回 false 后正文容器才挂载，因此需一并监听，
+// 否则首次加载时 refresh 拿到 null 容器，目录会一直空白。
+watch([renderedMarkdown, loading], async () => {
   await nextTick()
   refreshRuntimeToc()
 })

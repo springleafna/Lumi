@@ -168,36 +168,38 @@ export function useKnowledgeChat() {
     }
   }
 
-  async function renameActiveSession() {
-    if (!activeSession.value || streaming.value) return
-    const title = window.prompt('会话标题', activeSession.value.title)?.trim()
-    if (!title || title === activeSession.value.title) return
+  async function renameSession(session: KnowledgeChatSessionDto, title: string) {
+    const trimmed = title.trim()
+    if (!trimmed || trimmed === session.title) return
 
     await runAction('rename', '会话重命名失败', async () => {
-      const updated = await client.knowledgeChat.updateSession(activeSession.value!.id, { title })
-      activeSession.value = {
-        ...activeSession.value!,
-        title: updated.title,
-        updatedAt: updated.updatedAt,
-      }
+      const updated = await client.knowledgeChat.updateSession(session.id, { title: trimmed })
       sessions.value = sessions.value.map((item) =>
         item.id === updated.id ? { ...item, title: updated.title, updatedAt: updated.updatedAt } : item,
       )
+      if (activeSession.value?.id === updated.id) {
+        activeSession.value = {
+          ...activeSession.value,
+          title: updated.title,
+          updatedAt: updated.updatedAt,
+        }
+      }
       toast({ title: '会话标题已更新', variant: 'success' })
     })
   }
 
-  async function deleteActiveSession() {
-    if (!activeSession.value || streaming.value) return
-    if (!window.confirm(`确认删除「${activeSession.value.title}」吗？`)) return
+  async function deleteSessionById(session: KnowledgeChatSessionDto) {
+    // 正在流式输出的会话不允许删除，避免与 SSE 回写冲突。
+    if (streaming.value && activeSession.value?.id === session.id) return
 
     await runAction('delete', '会话删除失败', async () => {
-      const deletedId = activeSession.value!.id
-      await client.knowledgeChat.deleteSession(deletedId)
-      sessions.value = sessions.value.filter((item) => item.id !== deletedId)
-      activeSession.value = null
-      if (sessions.value[0]) {
-        await loadSession(sessions.value[0].id, { silent: true })
+      await client.knowledgeChat.deleteSession(session.id)
+      sessions.value = sessions.value.filter((item) => item.id !== session.id)
+      if (activeSession.value?.id === session.id) {
+        activeSession.value = null
+        if (sessions.value[0]) {
+          await loadSession(sessions.value[0].id, { silent: true })
+        }
       }
       toast({ title: '会话已删除', variant: 'success' })
     })
@@ -428,8 +430,8 @@ export function useKnowledgeChat() {
     submitQuestion,
     regenerateMessage,
     stopStreaming,
-    renameActiveSession,
-    deleteActiveSession,
+    renameSession,
+    deleteSessionById,
     canOpenCitation,
     openCitation,
     nextTick,

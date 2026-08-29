@@ -15,10 +15,11 @@ import {
 } from 'lucide-vue-next'
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import type { KnowledgeChatMessageDto } from '@lumi/shared'
+import type { KnowledgeChatMessageDto, KnowledgeChatSessionDto } from '@lumi/shared'
 import UiBadge from '../components/ui/Badge.vue'
 import UiButton from '../components/ui/Button.vue'
 import UiCard from '../components/ui/Card.vue'
+import UiDialog from '../components/ui/Dialog.vue'
 import UiEmptyState from '../components/ui/EmptyState.vue'
 import UiInput from '../components/ui/Input.vue'
 import { useMarkdownRenderer } from '../composables/useMarkdownRenderer'
@@ -44,8 +45,8 @@ const {
   submitQuestion,
   regenerateMessage,
   stopStreaming,
-  renameActiveSession,
-  deleteActiveSession,
+  renameSession,
+  deleteSessionById,
   canOpenCitation,
   openCitation,
 } = useKnowledgeChat()
@@ -54,7 +55,34 @@ const {
 const { render: renderAnswer } = useMarkdownRenderer({ html: false })
 
 const chatPanelRef = ref<HTMLElement | null>(null)
+const renameDialog = ref<{ id: string; title: string } | null>(null)
+const renameTitle = ref('')
+const deleteDialog = ref<KnowledgeChatSessionDto | null>(null)
 let scrollFrame: number | undefined
+
+function openRenameDialog(session: KnowledgeChatSessionDto) {
+  renameDialog.value = { id: session.id, title: session.title }
+  renameTitle.value = session.title
+}
+
+async function submitRename() {
+  const target = renameDialog.value
+  if (!target) return
+  const session = sessions.value.find((item) => item.id === target.id)
+  if (!session) {
+    renameDialog.value = null
+    return
+  }
+  await renameSession(session, renameTitle.value)
+  renameDialog.value = null
+}
+
+async function submitDelete() {
+  const target = deleteDialog.value
+  if (!target) return
+  await deleteSessionById(target)
+  deleteDialog.value = null
+}
 
 onMounted(async () => {
   await loadSessions()
@@ -152,17 +180,37 @@ function formatDate(value?: string | null) {
           加载中...
         </div>
         <nav v-else-if="hasSessions" class="knowledge-session-list">
-          <button
+          <div
             v-for="session in sessions"
             :key="session.id"
-            class="knowledge-session-button"
+            class="knowledge-session-item"
             :class="{ active: activeSession?.id === session.id }"
-            type="button"
-            @click="loadSession(session.id)"
           >
-            <span>{{ session.title }}</span>
-            <small>{{ formatDate(session.updatedAt) }}</small>
-          </button>
+            <button class="knowledge-session-button" type="button" @click="loadSession(session.id)">
+              <span>{{ session.title }}</span>
+              <small>{{ formatDate(session.updatedAt) }}</small>
+            </button>
+            <div class="knowledge-session-item-actions">
+              <button
+                class="knowledge-session-icon-button"
+                type="button"
+                title="重命名"
+                :disabled="Boolean(actionLoading)"
+                @click.stop="openRenameDialog(session)"
+              >
+                <PencilLine :size="13" />
+              </button>
+              <button
+                class="knowledge-session-icon-button"
+                type="button"
+                title="删除会话"
+                :disabled="Boolean(actionLoading) || (streaming && activeSession?.id === session.id)"
+                @click.stop="deleteDialog = session"
+              >
+                <Trash2 :size="13" />
+              </button>
+            </div>
+          </div>
         </nav>
         <p v-else class="sidebar-empty">暂无会话</p>
       </section>
@@ -197,18 +245,18 @@ function formatDate(value?: string | null) {
               <UiButton
                 variant="ghost"
                 size="icon"
-                :disabled="streaming || Boolean(actionLoading)"
+                :disabled="streaming || Boolean(actionLoading) || !activeSession"
                 title="重命名"
-                @click="renameActiveSession"
+                @click="activeSession && openRenameDialog(activeSession)"
               >
                 <PencilLine :size="15" />
               </UiButton>
               <UiButton
                 variant="ghost"
                 size="icon"
-                :disabled="streaming || Boolean(actionLoading)"
+                :disabled="streaming || Boolean(actionLoading) || !activeSession"
                 title="删除会话"
-                @click="deleteActiveSession"
+                @click="activeSession && (deleteDialog = activeSession)"
               >
                 <Trash2 :size="15" />
               </UiButton>
@@ -323,5 +371,43 @@ function formatDate(value?: string | null) {
         </form>
       </main>
     </div>
+
+    <UiDialog
+      :open="Boolean(renameDialog)"
+      title="重命名会话"
+      @update:open="renameDialog = null"
+    >
+      <form class="dialog-form" @submit.prevent="submitRename">
+        <label class="field-group">
+          <span>会话标题</span>
+          <UiInput v-model="renameTitle" maxlength="80" placeholder="输入新的会话标题" />
+        </label>
+        <div class="dialog-actions">
+          <UiButton variant="ghost" type="button" @click="renameDialog = null">取消</UiButton>
+          <UiButton
+            type="submit"
+            :disabled="!renameTitle.trim() || Boolean(actionLoading)"
+          >
+            {{ actionLoading === 'rename' ? '保存中...' : '保存' }}
+          </UiButton>
+        </div>
+      </form>
+    </UiDialog>
+
+    <UiDialog
+      :open="Boolean(deleteDialog)"
+      title="删除会话"
+      :description="
+        deleteDialog ? `确认删除「${deleteDialog.title}」吗？会话内的问答记录将一并删除。` : ''
+      "
+      @update:open="deleteDialog = null"
+    >
+      <div class="dialog-actions">
+        <UiButton variant="ghost" @click="deleteDialog = null">取消</UiButton>
+        <UiButton variant="destructive" :disabled="Boolean(actionLoading)" @click="submitDelete">
+          {{ actionLoading === 'delete' ? '删除中...' : '删除' }}
+        </UiButton>
+      </div>
+    </UiDialog>
   </main>
 </template>

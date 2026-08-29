@@ -52,6 +52,19 @@ type CitationWithRelations = {
 };
 
 /**
+ * 引用以文章为单位：同一文章召回的多个分片聚合为一个来源，
+ * 共用一个引用编号。
+ */
+type CitedSource = {
+  documentId: string;
+  documentTitle: string;
+  documentSource: string | null;
+  documentArchivedAt: Date | null;
+  documentCreatedAt: Date | null;
+  chunks: RetrievedChunk[];
+};
+
+/**
  * 知识库级 AI 问答服务。
  *
  * 问答主流程：用问题检索 Embedding 向量得到相关分片 → 组装 Prompt →
@@ -205,12 +218,6 @@ export class KnowledgeChatService {
     shouldGenerateTitle: boolean;
   }) {
     const provider = await this.aiProviderService.getChatConfig();
-    const citations = await this.embeddingsService.retrieveRelevantChunks(
-      input.userId,
-      input.question,
-      8,
-      2,
-    );
     const history = await this.loadRecentHistory(input.userId, input.sessionId, input.existingMessageId);
     const message = input.existingMessageId
       ? await this.prisma.knowledgeChatMessage.update({
@@ -236,13 +243,14 @@ export class KnowledgeChatService {
           },
         });
 
+    // 检索需要调用 Embedding 接口（秒级耗时），放在 message_created 之后，
+    // 保证前端先立刻显示用户消息，再进入等待答案的状态。
     this.writeSse(input.response, 'message_created', {
       id: message.id,
       sessionId: input.sessionId,
       question: input.question,
     });
 
-    const savedCitations = await this.saveCitations(message.id, citations);
     let answer = '';
     let aborted = false;
     const abortController = new AbortController();
@@ -254,10 +262,17 @@ export class KnowledgeChatService {
     });
 
     try {
+      const citations = await this.embeddingsService.retrieveRelevantChunks(
+        input.userId,
+        input.question,
+        8,
+        2,
+      );
+      const sources = groupChunksByDocument(citations);
       const messages = buildKnowledgeChatMessages({
         question: input.question,
         history,
-        citations,
+        sources,
       });
       for await (const chunk of this.aiProviderService.streamChatWithConfig(
         provider,
@@ -269,10 +284,11 @@ export class KnowledgeChatService {
         this.writeSse(input.response, 'answer_delta', { text: chunk });
       }
 
+      const { answer: finalAnswer, sources: usedSources } = collectUsedSources(answer, sources);
       await this.prisma.knowledgeChatMessage.update({
         where: { id: message.id },
         data: {
-          answer,
+          answer: finalAnswer,
           status: aborted ? 'aborted' : 'succeeded',
           errorMessage: null,
           finishedAt: new Date(),
@@ -283,10 +299,11 @@ export class KnowledgeChatService {
         data: { updatedAt: new Date() },
       });
 
+      const savedCitations = await this.saveCitations(message.id, usedSources);
       this.writeSse(input.response, 'citations', savedCitations.map(toCitationDto));
 
       if (!aborted && input.shouldGenerateTitle) {
-        const title = await this.generateTitleBestEffort(input.sessionId, input.question, answer);
+        const title = await this.generateTitleBestEffort(input.sessionId, input.question, finalAnswer);
         if (title) {
           this.writeSse(input.response, 'title_updated', { title });
         }
@@ -317,23 +334,27 @@ export class KnowledgeChatService {
     }
   }
 
-  private async saveCitations(messageId: string, chunks: RetrievedChunk[]) {
-    if (!chunks.length) return [];
+  private async saveCitations(messageId: string, sources: CitedSource[]) {
+    if (!sources.length) return [];
     await this.prisma.knowledgeChatCitation.createMany({
-      data: chunks.map((chunk, index) => ({
-        messageId,
-        citationIndex: index + 1,
-        excerpt: chunk.content,
-        score: chunk.score,
-        startOffset: chunk.startOffset,
-        endOffset: chunk.endOffset,
-        documentId: chunk.documentId,
-        chunkId: chunk.id,
-        documentTitleSnapshot: chunk.documentTitle,
-        documentSourceSnapshot: chunk.documentSource,
-        documentArchivedAtSnapshot: chunk.documentArchivedAt,
-        documentCreatedAtSnapshot: chunk.documentCreatedAt,
-      })),
+      data: sources.map((source, index) => {
+        // 检索结果按相似度排序，组内首个片段即该文档最相关的片段
+        const best = source.chunks[0];
+        return {
+          messageId,
+          citationIndex: index + 1,
+          excerpt: best.content,
+          score: best.score,
+          startOffset: best.startOffset,
+          endOffset: best.endOffset,
+          documentId: source.documentId,
+          chunkId: best.id,
+          documentTitleSnapshot: source.documentTitle,
+          documentSourceSnapshot: source.documentSource,
+          documentArchivedAtSnapshot: source.documentArchivedAt,
+          documentCreatedAtSnapshot: source.documentCreatedAt,
+        };
+      }),
     });
     return this.prisma.knowledgeChatCitation.findMany({
       where: { messageId },
@@ -434,14 +455,16 @@ export class KnowledgeChatService {
 function buildKnowledgeChatMessages(input: {
   question: string;
   history: string;
-  citations: RetrievedChunk[];
+  sources: CitedSource[];
 }): ChatMessage[] {
-  const citationText = input.citations.length
-    ? input.citations
-        .map(
-          (item, index) =>
-            `[${index + 1}] 标题：${item.documentTitle}\n片段：${truncate(item.content, 1400)}`,
-        )
+  const citationText = input.sources.length
+    ? input.sources
+        .map((source, index) => {
+          const fragments = source.chunks
+            .map((chunk) => truncate(chunk.content, 900))
+            .join('\n---\n');
+          return `[${index + 1}] 标题：${source.documentTitle}\n片段：${fragments}`;
+        })
         .join('\n\n')
     : '没有召回到足够相关的知识库片段。';
 
@@ -449,7 +472,7 @@ function buildKnowledgeChatMessages(input: {
     {
       role: 'system',
       content:
-        '你是 Lumi 的知识库问答助手。只能基于提供的知识库片段回答，默认使用中文。不要使用模型常识自由发挥。资料不足时必须明确说明“知识库中没有足够依据回答这个问题”。回答中使用 [1] [2] 这样的编号引用对应片段。',
+        '你是 Lumi 的知识库问答助手。只能基于提供的知识库片段回答，默认使用中文。不要使用模型常识自由发挥。资料不足时必须明确说明“知识库中没有足够依据回答这个问题”。编号 [1] [2] 各对应一篇文章，同一编号下可能有多段内容；回答中只标注实际参考了的编号，没有用到的来源不要标注。',
     },
     {
       role: 'user',
@@ -457,12 +480,66 @@ function buildKnowledgeChatMessages(input: {
         input.history ? `当前会话上下文：\n${input.history}` : '',
         `用户问题：${input.question}`,
         `知识库片段：\n${citationText}`,
-        '请给出可信、克制的中文回答。若使用了片段，请在相关句子后标注引用编号。',
+        '请给出可信、克制的中文回答。若使用了片段，请在相关句子后标注对应的来源编号。',
       ]
         .filter(Boolean)
         .join('\n\n'),
     },
   ];
+}
+
+/**
+ * 把检索分片按所属文档聚合；检索结果本身按相似度降序，
+ * 因此 Map 的插入顺序即来源的优先顺序，组内分片保持排序。
+ */
+function groupChunksByDocument(chunks: RetrievedChunk[]): CitedSource[] {
+  const byDocument = new Map<string, CitedSource>();
+  for (const chunk of chunks) {
+    const existing = byDocument.get(chunk.documentId);
+    if (existing) {
+      existing.chunks.push(chunk);
+      continue;
+    }
+    byDocument.set(chunk.documentId, {
+      documentId: chunk.documentId,
+      documentTitle: chunk.documentTitle,
+      documentSource: chunk.documentSource,
+      documentArchivedAt: chunk.documentArchivedAt,
+      documentCreatedAt: chunk.documentCreatedAt,
+      chunks: [chunk],
+    });
+  }
+  return [...byDocument.values()];
+}
+
+/**
+ * 解析回答中实际出现的 [n] 标记：只保留被引用的来源，按首次出现
+ * 顺序把编号重排为 1..N 并同步改写回答文本；模型没有引用任何来源
+ * 时不保存引用。
+ */
+function collectUsedSources(answer: string, sources: CitedSource[]): {
+  answer: string;
+  sources: CitedSource[];
+} {
+  const markerPattern = /\[(\d{1,2})\]/g;
+  const newIndexByOriginal = new Map<number, number>();
+  for (const match of answer.matchAll(markerPattern)) {
+    const original = Number(match[1]);
+    if (original < 1 || original > sources.length) continue;
+    if (!newIndexByOriginal.has(original)) {
+      newIndexByOriginal.set(original, newIndexByOriginal.size + 1);
+    }
+  }
+  if (!newIndexByOriginal.size) {
+    return { answer, sources: [] };
+  }
+
+  const remapped = answer.replace(markerPattern, (raw, value: string) => {
+    const newIndex = newIndexByOriginal.get(Number(value));
+    return newIndex ? `[${newIndex}]` : raw;
+  });
+  const used = [...newIndexByOriginal.keys()].map((original) => sources[original - 1]);
+  return { answer: remapped, sources: used };
 }
 
 function toSessionDto(session: SessionWithMessages): KnowledgeChatSessionDto {

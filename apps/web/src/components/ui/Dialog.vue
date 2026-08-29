@@ -30,7 +30,7 @@ function close() {
             <h2>{{ title }}</h2>
             <p v-if="description">{{ description }}</p>
           </div>
-          <div class="ui-dialog-body">
+          <div v-if="$slots.default" class="ui-dialog-body">
             <slot />
           </div>
           <footer v-if="$slots.footer" class="ui-dialog-footer">
