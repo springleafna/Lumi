@@ -118,13 +118,12 @@ export function useDocumentsQuery() {
     await Promise.all([loadDocuments(), loadFacets()])
   }
 
-  async function nextPage() {
-    page.value += 1
-    await loadDocuments()
-  }
-
-  async function prevPage() {
-    page.value -= 1
+  async function goToPage(target: number) {
+    const maxPage = Math.max(1, Math.ceil(total.value / pageSize))
+    if (!Number.isInteger(target) || target === page.value || target < 1 || target > maxPage) {
+      return
+    }
+    page.value = target
     await loadDocuments()
   }
 
@@ -177,8 +176,7 @@ export function useDocumentsQuery() {
     applyFilters,
     clearFilters,
     refresh,
-    nextPage,
-    prevPage,
+    goToPage,
     setErrorHandler,
   }
 }

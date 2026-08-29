@@ -17,6 +17,7 @@ import UiButton from '../components/ui/Button.vue'
 import UiCard from '../components/ui/Card.vue'
 import UiDialog from '../components/ui/Dialog.vue'
 import UiInput from '../components/ui/Input.vue'
+import UiPagination from '../components/ui/Pagination.vue'
 import UiSelect from '../components/ui/Select.vue'
 import UiTabs from '../components/ui/Tabs.vue'
 import ProviderConfigForm from '../components/settings/ProviderConfigForm.vue'
@@ -111,6 +112,11 @@ async function changeTab(value: string) {
   if (currentTab.value === 'jobs' && jobs.value.length === 0) {
     await loadJobs()
   }
+}
+
+async function onJobsPageChange(target: number) {
+  jobsPage.value = target
+  await loadJobs()
 }
 
 function normalizeTab(value: unknown): SettingsTab {
@@ -294,24 +300,12 @@ function formatDate(value?: string | null) {
 
           <div class="settings-pagination">
             <span>共 {{ jobsTotal }} 条</span>
-            <div>
-              <UiButton
-                variant="secondary"
-                size="sm"
-                :disabled="jobsPage <= 1"
-                @click="jobsPage -= 1; loadJobs()"
-              >
-                上一页
-              </UiButton>
-              <UiButton
-                variant="secondary"
-                size="sm"
-                :disabled="jobs.length < pageSize"
-                @click="jobsPage += 1; loadJobs()"
-              >
-                下一页
-              </UiButton>
-            </div>
+            <UiPagination
+              :page="jobsPage"
+              :page-size="pageSize"
+              :total="jobsTotal"
+              @update:page="onJobsPageChange"
+            />
           </div>
         </section>
       </main>

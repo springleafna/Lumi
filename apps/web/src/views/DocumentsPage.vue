@@ -25,6 +25,7 @@ import UiButton from '../components/ui/Button.vue'
 import UiCard from '../components/ui/Card.vue'
 import UiDialog from '../components/ui/Dialog.vue'
 import UiEmptyState from '../components/ui/EmptyState.vue'
+import UiPagination from '../components/ui/Pagination.vue'
 import UiSearchInput from '../components/ui/SearchInput.vue'
 import UiSelect from '../components/ui/Select.vue'
 import UiTabs from '../components/ui/Tabs.vue'
@@ -69,10 +70,17 @@ const {
   applyFilters,
   clearFilters,
   refresh,
-  nextPage,
-  prevPage,
+  goToPage,
   setErrorHandler,
 } = useDocumentsQuery()
+
+const contentRef = ref<HTMLElement | null>(null)
+
+async function onPageChange(target: number) {
+  await goToPage(target)
+  contentRef.value?.scrollTo({ top: 0, behavior: 'smooth' })
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
 
 const documentTypes: Array<{ value: DocumentType | ''; label: string }> = [
   { value: '', label: '全部类型' },
@@ -427,7 +435,7 @@ function readingStatusLabel(value: DocumentSummary['readingStatus']) {
         </div>
       </header>
 
-      <main class="content">
+      <main ref="contentRef" class="content">
         <section class="article-list-header">
           <div>
             <h1 class="article-list-title">{{ pageTitle }}</h1>
@@ -466,11 +474,13 @@ function readingStatusLabel(value: DocumentSummary['readingStatus']) {
         <p v-if="errorMessage" class="inline-alert">{{ errorMessage }}</p>
 
         <section class="article-grid">
-          <UiCard v-if="loading" class="article-card-shell loading-card">
-            <span class="loading-line"></span>
-            <span class="loading-line short"></span>
-            <span class="loading-line soft"></span>
-          </UiCard>
+          <template v-if="loading">
+            <UiCard v-for="n in pageSize" :key="`skeleton-${n}`" class="article-card-shell loading-card">
+              <span class="loading-line"></span>
+              <span class="loading-line short"></span>
+              <span class="loading-line soft"></span>
+            </UiCard>
+          </template>
 
           <UiEmptyState
             v-else-if="documents.length === 0"
@@ -510,11 +520,8 @@ function readingStatusLabel(value: DocumentSummary['readingStatus']) {
         </section>
 
         <footer class="pagination-bar">
-          <UiButton variant="secondary" :disabled="page <= 1" @click="prevPage">上一页</UiButton>
+          <UiPagination :page="page" :page-size="pageSize" :total="total" @update:page="onPageChange" />
           <span>第 {{ page }} 页 · 共 {{ total }} 篇</span>
-          <UiButton variant="secondary" :disabled="page * pageSize >= total" @click="nextPage">
-            下一页
-          </UiButton>
         </footer>
       </main>
     </div>
@@ -539,3 +546,15 @@ function readingStatusLabel(value: DocumentSummary['readingStatus']) {
     </UiDialog>
   </main>
 </template>
+
+<style scoped>
+.content {
+  display: flex;
+  flex-direction: column;
+}
+
+.article-grid {
+  flex: 1;
+  align-content: start;
+}
+</style>
