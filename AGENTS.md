@@ -1,375 +1,69 @@
 # Lumi Agent Notes
 
-## Project Overview
+## 项目概览
 
-Lumi is a personal knowledge management app for collecting, parsing, saving, organizing, and reading web articles and rich text pages.
+Lumi 是一个个人知识管理应用，用于收集、解析、保存、整理和阅读网页文章。仓库为 pnpm monorepo，脚本统一在仓库根目录执行。`docs/` 里有各 MVP 的方案文档。
 
-The repository is a pnpm monorepo. Prefer running scripts from the repository root unless a package-specific script is needed.
+| 部分 | 路径 | 说明 |
+| --- | --- | --- |
+| Web 客户端 | `apps/web` | Vue 3 + Vite |
+| API 服务 | `apps/server` | NestJS + Prisma 7，异步任务走 BullMQ + Redis |
+| Worker | `apps/server/src/worker.ts` | 独立进程，消费 `lumi-ingest` / `lumi-ai-analysis` / `lumi-embedding` 队列 |
+| 浏览器扩展 | `apps/extension` | WXT；popup 支持保存当前 URL / 整页 HTML / 选中内容 |
+| 共享包 | `packages/*` | `shared`（DTO）、`api-client`（axios 封装）、`parser`（HTML 转 Markdown）、`storage`（S3 兼容对象存储）、`ai`（占位） |
 
-## Repo Shape
-
-- `apps/web`: Vue 3 web client
-- `apps/server`: NestJS API server
-- `apps/extension`: WXT browser extension
-- `apps/cli`: CLI placeholder
-- `packages/shared`: shared DTOs and types
-- `packages/api-client`: axios client wrapper
-- `packages/parser`: HTML extraction and Markdown conversion
-- `packages/ai`: AI provider placeholder
-- `packages/storage`: RustFS / S3-compatible object storage wrapper
-
-## Completed MVP Scope
-
-- MVP0:
-  - monorepo scaffold
-  - workspace package layout
-  - shared TypeScript config and scripts
-- MVP1:
-  - login and JWT auth
-  - admin user initialization
-  - URL ingest
-  - HTML parsing, Markdown conversion, and document persistence
-  - document list, search, detail reading, and soft delete
-  - `@lumi/api-client` and `@lumi/parser`
-- MVP2:
-  - browser extension login
-  - configurable API/Web base URLs
-  - save current URL from popup
-  - save full page HTML from popup
-  - open saved document in Web detail page
-- MVP3:
-  - document status filters: active, archived, trash
-  - type/source/tag filters and keyword search
-  - created/updated sorting
-  - archive, unarchive, restore, soft delete, permanent delete
-  - manual tag add/remove on detail page
-  - facets endpoint for tags and sources
-  - Web reading and management UI refresh
-- MVP4:
-  - Redis + BullMQ async ingest and AI analysis queues
-  - standalone server worker entrypoint
-  - async URL/HTML ingest with placeholder documents
-  - automatic AI analysis after parsing succeeds
-  - OpenAI-compatible provider abstraction
-  - DeepSeek and SiliconFlow env-based configuration
-  - structured AI reading card and auto tags
-  - current-document AI Q&A with streaming response
-  - per-document AI conversation history
-- MVP5:
-  - two-state reading status: unread and read
-  - documents default to unread and detail view auto-marks unread documents as read
-  - favorite/unfavorite documents independently from archive and reading status
-  - document list filters for unread, read, and favorite documents
-  - document annotations: text highlight, optional note, list, edit, delete, and scroll-to-highlight
-  - Web local `.md` / `.txt` file import; local file documents use source `本地`
-  - extension selected-content import into `fragment` documents
-  - Shiki-based fenced code block highlighting in the Markdown reader
-- MVP6:
-  - Web AI settings center for separate Chat and Embedding provider configs
-  - encrypted AI API key storage through `AI_CONFIG_ENCRYPTION_KEY`
-  - Embedding index jobs after document ingest succeeds
-  - knowledge-base AI chat with sessions, citations, regeneration, and Markdown answers
-  - index job management with status filters, retry, and completed chunk inspection
-- MVP7:
-  - parser quality improvements for cleaner article extraction, metadata, links, lazy images, `srcset`, and safe HTML
-  - runtime TOC generated from rendered `h2` / `h3` textContent, with sequential anchors and current-section highlight
-  - new URL / HTML article image archiving to RustFS / S3-compatible object storage
-  - `DocumentMediaAsset` records content/cover image archive success, failure, and skipped states
-  - reader image display improvements for responsive images, `figure`, `figcaption`, and failed-image fallback links
-
-## Web UI Direction
-
-- The Web app should feel like a quiet reading product, closer to shadcn/ui, Notion, Readwise Reader, Linear, and Vercel Dashboard than a decorative dashboard.
-- Current visual language is black, white, and gray only.
-- Avoid blue/amber/purple accent palettes unless the user explicitly asks for them.
-- Prefer:
-  - `#18181B` and `#1A1813` for foreground and strong controls
-  - `#F4F4F5`, white, and zinc/neutral grays for surfaces
-  - subtle borders, small radius, and light shadows
-- Do not use heavy gradients, oversized rounded pills, or decorative dashboard visuals.
-- Tags should be subtle: gray background, no visible border, small radius.
-- Existing local shadcn-style components live in `apps/web/src/components/ui`:
-  - `Button`
-  - `Input`
-  - `Select`
-  - `Card`
-  - `Badge`
-  - `Tabs`
-  - `Dialog`
-  - `EmptyState`
-  - `SearchInput`
-  - `Toaster`
-- Use these components before adding page-local controls.
-- Toast feedback is provided by `apps/web/src/composables/useToast.ts` and mounted in `App.vue`.
-- Markdown reading styles are in `apps/web/src/style.css` under `.markdown-reader`.
-
-### Web Code Organization (MVP8)
-
-- Frontend components follow a three-layer model:
-  - Global UI components live in `apps/web/src/components/ui` and serve all pages.
-  - Domain components live in `apps/web/src/components/<area>` (for example `document-detail`, `documents`, `knowledge-chat`, `settings`) and are scoped to a page or business concept.
-  - Page shells live in `apps/web/src/views` and only assemble routes, page-level state, and child components; they should not carry large UI fragments.
-- A single `.vue` file should stay under ~500 lines; anything above ~800 should be split.
-- Splitting priority: pure functions (`apps/web/src/lib`) > composables (`apps/web/src/composables`) > domain components > reusable components.
-- Pure DOM algorithms and pure data functions go in `apps/web/src/lib` (no Vue reactivity). Example: `lib/highlight-dom.ts`.
-- Stateful logic with reactivity, lifecycle, or component-instance coupling goes in `apps/web/src/composables/useXxx.ts`. Composables must not depend on `useToast` directly; callers inject error handling.
-- When a page grows large, extract domain components and composables first; keep the page shell focused on assembly and page-level actions.
-
-### Web Style Organization (MVP8)
-
-- Styles follow a three-layer boundary:
-  - Global styles stay in `apps/web/src/style.css`: CSS variables (`:root`), reset rules, shared layout (`.app-shell` / `.sidebar` / `.main` / `.header` / `.content`), and cross-page `.markdown-reader` rules.
-  - UI library styles belong in each `components/ui/*.vue` `<style scoped>` block.
-  - Page and domain styles belong in the corresponding component's `<style scoped>` block.
-- Rules of thumb: a style that serves a single component is scoped; a style used by two or more pages stays global; styles injected via `v-html` (such as `.markdown-reader`) stay global because scoped does not apply.
-- CSS variables are referenced via `var(--xxx)` from any scope; only the variable definitions live in the global layer.
-- Use `:deep()` sparingly for cross-component styling; prefer props or the child component's own scoped styles.
-
-
-## Key Scripts
+## 常用脚本
 
 ```powershell
 pnpm install
-pnpm db:generate
-pnpm db:migrate
-pnpm db:init-user
-pnpm dev:server
-pnpm dev:worker
-pnpm dev:web
-pnpm dev:all
-pnpm dev:extension
-pnpm build:server
-pnpm build:web
-pnpm build:extension
+pnpm dev:all   # 同时启动 web + server + worker
+pnpm dev:server / dev:worker / dev:web / dev:extension
+pnpm build:web / build:server / build:extension
+pnpm db:generate / db:migrate / db:init-user
 ```
 
-Build scripts:
+- 根目录脚本会自动先执行 `build:packages`（shared/parser/storage/api-client 构建到 `dist/`）。
+- 改动后按范围跑聚焦构建：`pnpm build:web` / `build:server` / `build:extension`。
+- PostgreSQL 不可用时，`db:migrate` 和 `db:init-user` 按设计直接失败。
 
-- `pnpm build:packages`
-- `pnpm build:server`
-- `pnpm build:web`
-- `pnpm build:extension`
+## 环境变量
 
-Development scripts:
+- 根目录 `.env` 驱动 server、worker 和 Prisma；web 使用 `VITE_API_BASE_URL`。所有键位见 `.env.example`。
+- 默认值：服务 `http://localhost:3000`（API 前缀 `/api`）、web `http://localhost:5173`、Redis `redis://localhost:6379`。
+- PostgreSQL 密码含特殊字符时必须在 `DATABASE_URL` 中做 URL 编码（`#` → `%23`）。
+- 对象存储（图片归档）是可选的；未配置时 URL/HTML 导入保留原图地址。桶需手动创建并配置公开读。
+- 日志：server 和 worker 按天写文件到仓库根目录 `logs/`（已被 gitignore），保留 14 天；可通过 `LOG_LEVEL`（默认 `info`）和 `LOG_DIR` 配置。
 
-- `pnpm dev:server`
-- `pnpm dev:worker`
-- `pnpm dev:all`
-- `pnpm dev:web`
-- `pnpm dev:extension`
+## 服务端要点
 
-Database scripts:
+- 认证为 JWT；管理员由 `db:init-user` 初始化；文档按用户隔离。
+- 导入是异步的：API 创建占位文档 + BullMQ 任务，worker 负责抓取/解析/图片归档/落库，然后接着投递 AI 分析和向量索引任务。Redis 必须先启动。
+- 文档状态字段：`deletedAt`（回收站）、`archivedAt`（归档）、`ingestStatus`（占位/解析进度）、`readingStatus`（`unread`/`read`；详情页会把解析成功且非回收站的未读文档自动标为已读）、`favoritedAt`（独立于归档和阅读状态）、本地文件导入 `source = 本地`。
+- 标签是手动纯文本标签；AI 生成的标签写入同一体系，保持可编辑。
+- 导入限额：HTML `5MB`（超出返回 `页面内容过大，暂不支持保存`）、文件 `.md`/`.txt` 最大 `2MB`（不做 URL 去重）、选区最大 `200KB`（选区导入不自动触发 AI 分析）。
+- Express JSON 解析器上限为 `6mb`（供扩展 HTML 导入使用）。
+- 图片归档只作用于新导入的 URL/HTML 文章（历史文章、选区、本地文件不归档）：仅支持 JPEG/PNG/WebP/GIF/AVIF，每篇正文最多 60 张，单图限制 10MB / 10s / 3 次重定向，禁止私有/本地 IP。永久删除时尽力清理已归档对象，失败不阻塞文档删除。
 
-- `pnpm db:generate`
-- `pnpm db:migrate`
-- `pnpm db:init-user`
+## Web
 
-## Environment
+视觉方向：安静的阅读产品（对标 shadcn/ui、Notion、Readwise Reader、Linear）——只用黑白灰，zinc/neutral 中性色表面，细边框、小圆角、浅阴影。不用蓝/琥珀/紫强调色，不用重渐变和超大胶囊形。标签是浅灰底、无边框。
+  
+- 前端统一使用 shadcn/ui 风格：可复用组件在 `apps/web/src/components/ui`（Button、Input、Select、Card、Badge、Tabs、Dialog、EmptyState、SearchInput、Toaster）。优先使用它们，再考虑页面局部控件；toast 反馈走 `composables/useToast.ts`。
+- 图标统一使用已安装的 `lucide-vue-next` 图标库，不引入其他图标方案。
+- 三层结构：`components/ui`（全局）→ `components/<area>`（领域组件，如 `document-detail`、`documents`、`knowledge-chat`、`settings`）→ `views`（页面壳，只做组装）。单个 `.vue` 控制在 ~500 行内（~800 为硬上限）。
+- 拆分优先级：纯函数放 `src/lib`（不含 Vue 响应式）→ 组合式函数放 `src/composables`（不得直接 import `useToast`，错误处理由调用方注入）→ 领域组件 → 可复用组件。
+- 样式：`src/style.css` 保留 CSS 变量（`:root`）、reset、共享布局和 `.markdown-reader`（`v-html` 注入的内容必须用全局样式）。只服务单个组件的样式放它自己的 `<style scoped>`；被两个及以上页面共用的样式放全局。优先用 props 传递，少用 `:deep()`。
+- 文档列表：阅读状态和收藏筛选在搜索工具栏；不要在卡片底部重复加收藏角标。
 
-- Root `.env` drives the server and Prisma config.
-- Web uses `VITE_API_BASE_URL`.
-- Default server origin: `http://localhost:3000`
-- Default API base URL: `http://127.0.0.1:3000/api`
-- Default web origin: `http://localhost:5173`
-- Default Redis URL: `redis://localhost:6379`
-- Object storage for MVP7 is optional; when incomplete, URL / HTML ingest keeps original image URLs.
-- Extension dev server runs on `http://127.0.0.1:5174`.
-- Extension settings are stored in `browser.storage.local`.
-- Extension defaults:
-  - API base URL: `http://127.0.0.1:3000/api`
-  - Web base URL: `http://localhost:5173`
+## 扩展
 
-Example database URL:
+- popup 通过 `client.ingest.*` 保存当前 URL、整页 HTML 和选中内容；options 页配置地址和登录（存 `browser.storage.local`）。
+- 扩展端不清洗抓取的 HTML；解析和净化统一在服务端 `@lumi/parser` 完成。
 
-```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/lumi?schema=public"
-```
+## 实现约定
 
-If the PostgreSQL password contains special characters such as `#`, URL-encode them in `DATABASE_URL`.
-
-Object storage env keys for RustFS / S3-compatible image archiving:
-
-```env
-OBJECT_STORAGE_ENDPOINT=""
-OBJECT_STORAGE_BUCKET=""
-OBJECT_STORAGE_PUBLIC_BASE_URL=""
-OBJECT_STORAGE_ACCESS_KEY_ID=""
-OBJECT_STORAGE_SECRET_ACCESS_KEY=""
-OBJECT_STORAGE_REGION="us-east-1"
-OBJECT_STORAGE_FORCE_PATH_STYLE=true
-```
-
-The bucket must be created manually and configured for public read.
-
-## Server Notes
-
-- Server uses NestJS with Prisma 7 and `prisma.config.ts`.
-- `pnpm --filter @lumi/server prisma generate` works through the server package script.
-- If the local database is not available, `db:migrate` and `db:init-user` fail by design.
-- Server disables Nest's default JSON parser and installs an Express JSON parser with a `6mb` limit for extension HTML ingest.
-- Business HTML ingest limit is `5MB`; larger payloads should return `页面内容过大，暂不支持保存`.
-- MVP4 ingest is asynchronous. API routes create placeholder documents and BullMQ jobs; Worker performs fetch/parse/update.
-- Worker entrypoint is `apps/server/src/worker.ts`.
-- Worker consumes `lumi-ingest` and `lumi-ai-analysis`.
-- Redis must be running before async ingest and AI analysis can work.
-- Documents are user-scoped.
-- `Document.ingestStatus` tracks placeholder/parse state.
-- Document timestamps:
-  - `deletedAt`: soft delete/trash state
-  - `archivedAt`: archive state
-- `Document.readingStatus` has only `unread` and `read`.
-- New documents default to `unread`; Web detail view calls the reading-status API to mark succeeded, non-trash unread documents as `read`.
-- `Document.favoritedAt` tracks favorite state and is independent from archive and reading status.
-- Web list supports reading status and favorite filters in the search toolbar; do not add duplicate favorite badges to card footers.
-- Local file import should set `Document.source = 本地`.
-- Tags are manual plain-text tags.
-- AI generated tags are written into the same manual tag system and remain user editable.
-- `DocumentMediaAsset` tracks MVP7 image archiving results for URL / HTML imports.
-- Image archiving only applies to newly imported URL / HTML articles, not historical articles, selection fragments, or local files.
-- Supported archived image types are JPEG, PNG, WebP, GIF, and AVIF; SVG and unknown types are skipped or failed.
-- Content image archiving processes at most 60 images per article; cover image is handled separately.
-- Single image download limit is 10MB, timeout is 10s, max redirects is 3, and private/local IP targets must be blocked.
-- Permanent delete best-effort deletes successful media objects from object storage; failures must not block document deletion.
-
-## MVP4 AI API
-
-Current AI-related API surface includes:
-
-```txt
-POST   /api/documents/:id/retry-ingest
-GET    /api/documents/:id/ai-analysis
-POST   /api/documents/:id/ai-analysis/retry
-GET    /api/documents/:id/ai-conversations
-POST   /api/documents/:id/ai-conversations
-```
-
-MVP6 knowledge and settings API surface includes:
-
-```txt
-GET    /api/settings/ai
-PUT    /api/settings/ai/chat
-PUT    /api/settings/ai/embedding
-DELETE /api/settings/ai/chat
-DELETE /api/settings/ai/embedding
-POST   /api/settings/ai/chat/test
-POST   /api/settings/ai/embedding/test
-GET    /api/settings/embedding-jobs
-GET    /api/settings/embedding-jobs/:id/chunks
-POST   /api/settings/embedding-jobs/:id/retry
-GET    /api/knowledge-chat/sessions
-POST   /api/knowledge-chat/sessions/ask
-GET    /api/knowledge-chat/sessions/:id
-PATCH  /api/knowledge-chat/sessions/:id
-DELETE /api/knowledge-chat/sessions/:id
-POST   /api/knowledge-chat/sessions/:id/messages
-POST   /api/knowledge-chat/messages/:messageId/regenerate
-```
-
-AI env keys:
-
-```env
-AI_PROVIDER="deepseek"
-DEEPSEEK_API_KEY=""
-DEEPSEEK_BASE_URL="https://api.deepseek.com"
-DEEPSEEK_MODEL="deepseek-chat"
-SILICONFLOW_API_KEY=""
-SILICONFLOW_BASE_URL="https://api.siliconflow.cn/v1"
-SILICONFLOW_MODEL=""
-```
-
-## Document API
-
-Current document API surface includes:
-
-```txt
-GET    /api/documents
-GET    /api/documents/facets
-GET    /api/documents/:id
-DELETE /api/documents/:id
-PATCH  /api/documents/:id/archive
-PATCH  /api/documents/:id/unarchive
-PATCH  /api/documents/:id/restore
-DELETE /api/documents/:id/permanent
-PATCH  /api/documents/:id/reading-status
-PATCH  /api/documents/:id/favorite
-POST   /api/documents/:id/tags
-DELETE /api/documents/:id/tags/:tagId
-GET    /api/documents/:id/annotations
-POST   /api/documents/:id/annotations
-PATCH  /api/documents/:id/annotations/:annotationId
-DELETE /api/documents/:id/annotations/:annotationId
-```
-
-Document list supports:
-
-- `keyword`: title, excerpt, and content text search
-- `status`: `active`, `archived`, `trash`
-- `type`: `article`, `video`, `audio`, `pdf`, `fragment`
-- `tag`: tag id
-- `source`: source string
-- `readingStatus`: `unread`, `read`
-- `favorite`: `true`
-- `sort`: `created_desc`, `created_asc`, `updated_desc`, `updated_asc`
-- `page`
-- `pageSize`
-
-## Ingest API
-
-```txt
-POST /api/ingest/url
-POST /api/ingest/html
-POST /api/ingest/file
-POST /api/ingest/selection
-```
-
-HTML ingest request:
-
-```json
-{
-  "url": "https://example.com/article",
-  "title": "Page title",
-  "html": "<html>...</html>"
-}
-```
-
-- Requires JWT.
-- Creates an `IngestJob`.
-- `POST /api/ingest/html` uses `type = html`.
-- URL / HTML Worker flow runs parser cleanup and media archiving before saving final document content, then enqueues AI analysis and Embedding indexing.
-- If object storage is not configured, media archiving records skipped assets and keeps the original Markdown image URLs.
-- Duplicate URL rules are shared with URL ingest.
-- `POST /api/ingest/file` accepts multipart field `file`, supports `.md` and `.txt`, max `2MB`, and creates a complete article immediately.
-- File imports are not deduplicated by URL and should show source `本地`.
-- `POST /api/ingest/selection` saves current selected page content as `type = fragment`, max `200KB`, and creates a new fragment each time.
-- File import attempts to enqueue AI analysis; selection import does not automatically enqueue AI analysis.
-
-## MVP2 Extension Notes
-
-- WXT config grants `activeTab`, `scripting`, `storage`, `tabs`, and `<all_urls>`.
-- Popup:
-  - reads current tab title and URL
-  - saves current URL via `client.ingest.url`
-  - captures full page HTML via `browser.scripting.executeScript`
-  - saves full page HTML via `client.ingest.html`
-  - captures current selection HTML/text
-  - saves selected content via `client.ingest.selection`
-  - opens saved document in a new tab
-- Options:
-  - edits API base URL and Web base URL
-  - logs in through `client.auth.login`
-  - tests auth through `client.auth.me`
-  - logout clears token/user but preserves URLs
-- Capture utilities intentionally do not clean HTML in the extension; parsing and sanitizing stay on the server through `@lumi/parser`.
-
-## Implementation Notes
-
-- `@lumi/shared`, `@lumi/parser`, `@lumi/storage`, and `@lumi/api-client` build to `dist/`.
-- Web, server, and extension scripts should run `build:packages` first when they depend on workspace package output.
-- Prefer adding shared DTO changes in `packages/shared` before changing API client/server/web code.
-- Prefer using `@lumi/api-client` in Web and extension instead of raw axios calls.
-- Keep Web UI controls in `apps/web/src/components/ui` when they are reusable.
-- Keep unrelated refactors out of MVP implementation changes.
-- Run focused builds after changes:
-  - Web UI changes: `pnpm build:web`
-  - Server/API changes: `pnpm build:server`
-  - Extension changes: `pnpm build:extension`
+- DTO 变更先加在 `packages/shared`，再同步 `api-client` / server / web。
+- web 和扩展统一走 `@lumi/api-client`，不要直接裸写 axios。
+- API 端点（documents、ingest、settings/ai、embedding-jobs、knowledge-chat）以 `packages/api-client` 和服务端控制器为准。
+- 可复用的 Web 控件放 `apps/web/src/components/ui`。
+- 功能改动不要夹带无关重构。

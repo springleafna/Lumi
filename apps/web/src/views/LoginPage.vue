@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LogIn } from 'lucide-vue-next'
+import { Eye, EyeOff, LogIn } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
@@ -17,6 +17,7 @@ const { toast } = useToast()
 
 const username = ref('admin')
 const password = ref('admin123456')
+const showPassword = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
 
@@ -63,12 +64,24 @@ async function submit() {
         </label>
         <label class="field-group">
           <span>密码</span>
-          <UiInput
-            v-model="password"
-            autocomplete="current-password"
-            placeholder="admin123456"
-            type="password"
-          />
+          <div class="password-field">
+            <UiInput
+              v-model="password"
+              :type="showPassword ? 'text' : 'password'"
+              autocomplete="current-password"
+              placeholder="admin123456"
+            />
+            <button
+              type="button"
+              class="password-toggle"
+              :aria-label="showPassword ? '隐藏密码' : '显示密码'"
+              :aria-pressed="showPassword"
+              @click.prevent="showPassword = !showPassword"
+            >
+              <EyeOff v-if="showPassword" :size="16" />
+              <Eye v-else :size="16" />
+            </button>
+          </div>
         </label>
         <p v-if="errorMessage" class="inline-alert">{{ errorMessage }}</p>
         <UiButton class="auth-submit" :disabled="loading" type="submit">
@@ -79,3 +92,36 @@ async function submit() {
     </UiCard>
   </main>
 </template>
+
+<style scoped>
+.password-field {
+  position: relative;
+}
+
+.password-field .ui-input {
+  padding-right: 40px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.password-toggle:hover {
+  color: var(--fg-primary);
+  background: var(--bg-secondary);
+}
+</style>

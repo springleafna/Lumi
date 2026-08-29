@@ -5,5 +5,7 @@ dist
 .env.local
 .DS_Store
 *.log
+logs
+.zcode
 pnpm-lock.yaml.tmp
 apps/server/src/generated/prisma
