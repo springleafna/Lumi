@@ -1,0 +1,103 @@
+/* base.css — Lumi 移动端主题：黑白灰基调 + Vant 主题变量 */
+
+:root {
+  /* Lumi 色板（与 web 端一致：zinc/neutral 黑白灰） */
+  --lumi-fg-primary: #18181b;
+  --lumi-fg-secondary: #3f3f46;
+  --lumi-fg-tertiary: #a1a1aa;
+  --lumi-fg-muted: #a1a1aa;
+  --lumi-fg-disabled: #d4d4d8;
+  --lumi-bg-primary: #ffffff;
+  --lumi-bg-secondary: #f4f4f5;
+  --lumi-bg-page: #fafafa;
+  --lumi-border: #e4e4e7;
+  --lumi-border-muted: #f4f4f5;
+  --lumi-danger: #dc2626;
+
+  /* Vant 主题定制 */
+  --van-primary-color: #18181b;
+  --van-text-color: #18181b;
+  --van-text-color-2: #52525b;
+  --van-text-color-3: #a1a1aa;
+  --van-border-color: #e4e4e7;
+  --van-background: #fafafa;
+  --van-background-2: #ffffff;
+  --van-nav-bar-background: #ffffff;
+  --van-nav-bar-title-text-color: #18181b;
+  --van-nav-bar-icon-color: #3f3f46;
+  --van-tabbar-background: #ffffff;
+  --van-tabbar-item-active-color: #18181b;
+  --van-tabbar-item-text-color: #71717a;
+  --van-search-background: #ffffff;
+  --van-search-input-background: #f4f4f5;
+  --van-cell-background: #ffffff;
+  --van-button-primary-background: #18181b;
+  --van-button-primary-border-color: #18181b;
+  --van-dialog-radius: 14px;
+  --van-popup-round-radius: 16px;
+  --van-toast-background: rgba(24, 24, 27, 0.9);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  height: 100%;
+  /* 弹层锁滚动（body overflow:hidden）时滚动条消失会导致文字重排，槽位常驻保持宽度稳定 */
+  scrollbar-gutter: stable;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  color: var(--lumi-fg-primary);
+  background: var(--lumi-bg-page);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 安全区：内容不被刘海 / Home 横条遮挡 */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* 单行/多行省略 */
+.ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.clamp-2 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* 页面通用骨架：固定头部 + 可滚动主体 */
+.page {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  background: var(--lumi-bg-page);
+}
+
+.page-body {
+  flex: 1;
+  min-height: 0;
+}

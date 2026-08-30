@@ -1,0 +1,17 @@
+{
+  "name": "Lumi",
+  "short_name": "Lumi",
+  "description": "Lumi 个人知识管理 - 移动端",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/lumi-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

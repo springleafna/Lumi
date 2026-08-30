@@ -9,3 +9,9 @@ logs
 .zcode
 pnpm-lock.yaml.tmp
 apps/server/src/generated/prisma
+
+# Capacitor android build artifacts
+apps/mobile/android/.gradle/
+apps/mobile/android/app/build/
+apps/mobile/android/build/
+apps/mobile/android/local.properties

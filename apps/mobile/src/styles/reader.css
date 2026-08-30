@@ -1,0 +1,244 @@
+/* reader.css — 全屏阅读器排版（v-html 注入内容必须用全局样式） */
+
+.reader-content {
+  padding: 8px 16px 32px;
+  background: var(--lumi-bg-primary);
+  color: var(--lumi-fg-primary);
+  font-size: var(--reader-font-size, 17px);
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.reader-content h1,
+.reader-content h2,
+.reader-content h3,
+.reader-content h4 {
+  margin: 1.4em 0 0.6em;
+  color: var(--lumi-fg-primary);
+  font-weight: 600;
+  line-height: 1.35;
+  scroll-margin-top: 64px;
+}
+
+.reader-content h1 {
+  font-size: 1.35em;
+}
+
+.reader-content h2 {
+  font-size: 1.22em;
+}
+
+.reader-content h3 {
+  font-size: 1.08em;
+}
+
+.reader-content p {
+  margin: 0.9em 0;
+}
+
+.reader-content a {
+  color: var(--lumi-fg-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.reader-content blockquote {
+  margin: 1em 0;
+  padding: 4px 14px;
+  border-left: 3px solid var(--lumi-border);
+  color: var(--lumi-fg-secondary);
+  background: var(--lumi-bg-secondary);
+  border-radius: 0 8px 8px 0;
+}
+
+.reader-content pre {
+  margin: 1em 0;
+  padding: 12px;
+  overflow-x: auto;
+  background: var(--lumi-bg-secondary);
+  border-radius: 8px;
+  font-size: 0.82em;
+  line-height: 1.6;
+}
+
+.reader-content code {
+  padding: 2px 5px;
+  background: var(--lumi-bg-secondary);
+  border-radius: 4px;
+  font-size: 0.88em;
+}
+
+.reader-content pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.reader-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1em auto;
+  border-radius: 8px;
+}
+
+.reader-content figure {
+  margin: 1em 0;
+}
+
+.reader-content figcaption {
+  margin-top: 6px;
+  color: var(--lumi-fg-tertiary);
+  font-size: 0.8em;
+  text-align: center;
+}
+
+.reader-content ul,
+.reader-content ol {
+  margin: 0.9em 0;
+  padding-left: 1.4em;
+}
+
+.reader-content li {
+  margin: 0.35em 0;
+}
+
+.reader-content table {
+  display: block;
+  width: 100%;
+  margin: 1em 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.88em;
+}
+
+.reader-content th,
+.reader-content td {
+  padding: 8px 10px;
+  border: 1px solid var(--lumi-border);
+  text-align: left;
+}
+
+.reader-content th {
+  background: var(--lumi-bg-secondary);
+}
+
+.reader-content hr {
+  margin: 1.6em 0;
+  border: 0;
+  border-top: 1px solid var(--lumi-border);
+}
+
+/* 批注高亮（只读展示 + 定位闪烁） */
+.reader-content .reader-annotation-mark {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: #e7e5e4;
+  color: inherit;
+}
+
+.reader-content .reader-annotation-mark:hover {
+  background: #d6d3d1;
+}
+
+.reader-content .reader-annotation-mark.is-flashing {
+  animation: reader-annotation-flash 1.2s ease;
+}
+
+@keyframes reader-annotation-flash {
+  0%,
+  100% {
+    background: #e7e5e4;
+    box-shadow: none;
+  }
+
+  30% {
+    background: #d6d3d1;
+    box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.16);
+  }
+}
+
+/* AI 问答弹层中的回答 Markdown（v-html 注入，必须全局） */
+.ai-sheet-answer > :first-child {
+  margin-top: 0;
+}
+
+.ai-sheet-answer > :last-child {
+  margin-bottom: 0;
+}
+
+.ai-sheet-answer h1,
+.ai-sheet-answer h2,
+.ai-sheet-answer h3,
+.ai-sheet-answer h4 {
+  margin: 1em 0 0.4em;
+  color: var(--lumi-fg-primary);
+  font-size: 1.05em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ai-sheet-answer p,
+.ai-sheet-answer ul,
+.ai-sheet-answer ol,
+.ai-sheet-answer blockquote,
+.ai-sheet-answer pre,
+.ai-sheet-answer table {
+  margin: 0.7em 0;
+}
+
+.ai-sheet-answer ul,
+.ai-sheet-answer ol {
+  padding-left: 1.4em;
+}
+
+.ai-sheet-answer li {
+  margin: 0.25em 0;
+}
+
+.ai-sheet-answer blockquote {
+  padding: 2px 12px;
+  border-left: 3px solid var(--lumi-border);
+  color: var(--lumi-fg-muted);
+  background: var(--lumi-bg-secondary);
+  border-radius: 0 8px 8px 0;
+}
+
+.ai-sheet-answer pre {
+  padding: 10px;
+  overflow-x: auto;
+  background: var(--lumi-bg-secondary);
+  border-radius: 8px;
+  font-size: 0.85em;
+}
+
+.ai-sheet-answer code {
+  padding: 1px 4px;
+  background: var(--lumi-bg-secondary);
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.ai-sheet-answer pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.ai-sheet-answer table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.ai-sheet-answer th,
+.ai-sheet-answer td {
+  padding: 6px 8px;
+  border: 1px solid var(--lumi-border);
+  text-align: left;
+}
+
+.ai-sheet-answer strong {
+  color: var(--lumi-fg-primary);
+}

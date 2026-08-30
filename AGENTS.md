@@ -10,6 +10,7 @@ Lumi 是一个个人知识管理应用，用于收集、解析、保存、整理
 | API 服务 | `apps/server` | NestJS + Prisma 7，异步任务走 BullMQ + Redis |
 | Worker | `apps/server/src/worker.ts` | 独立进程，消费 `lumi-ingest` / `lumi-ai-analysis` / `lumi-embedding` 队列 |
 | 浏览器扩展 | `apps/extension` | WXT；popup 支持保存当前 URL / 整页 HTML / 选中内容 |
+| 移动端 | `apps/mobile` | Vue 3 + Vite + Vant 4；安卓优先，Capacitor 打包，可当移动网页/PWA 用 |
 | 共享包 | `packages/*` | `shared`（DTO）、`api-client`（axios 封装）、`parser`（HTML 转 Markdown）、`storage`（S3 兼容对象存储）、`ai`（占位） |
 
 ## 常用脚本
@@ -23,7 +24,7 @@ pnpm db:generate / db:migrate / db:init-user
 ```
 
 - 根目录脚本会自动先执行 `build:packages`（shared/parser/storage/api-client 构建到 `dist/`）。
-- 改动后按范围跑聚焦构建：`pnpm build:web` / `build:server` / `build:extension`。
+- 改动后按范围跑聚焦构建：`pnpm build:web` / `build:server` / `build:extension` / `build:mobile`。
 - PostgreSQL 不可用时，`db:migrate` 和 `db:init-user` 按设计直接失败。
 
 ## 环境变量
@@ -60,6 +61,7 @@ pnpm db:generate / db:migrate / db:init-user
 
 - popup 通过 `client.ingest.*` 保存当前 URL、整页 HTML 和选中内容；options 页配置地址和登录（存 `browser.storage.local`）。
 - 扩展端不清洗抓取的 HTML；解析和净化统一在服务端 `@lumi/parser` 完成。
+- 移动端服务器地址是运行时配置（localStorage，首次进 `/setup`），不是构建时 env；改地址后必须整页跳转重建 `client` 单例。AI/Embedding 配置管理只在桌面 Web，移动端只做消费和轻交互。
 
 ## 实现约定
 

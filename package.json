@@ -10,9 +10,11 @@
     "dev:worker": "pnpm db:generate && pnpm build:packages && pnpm --filter @lumi/server start:worker:dev",
     "dev:all": "concurrently -n web,server,worker -c auto \"pnpm dev:web\" \"pnpm dev:server\" \"pnpm dev:worker\"",
     "dev:extension": "pnpm build:packages && pnpm --filter @lumi/extension dev",
+    "dev:mobile": "pnpm build:packages && pnpm --filter @lumi/mobile dev",
     "build:web": "pnpm build:packages && pnpm --filter @lumi/web build",
     "build:server": "pnpm db:generate && pnpm build:packages && pnpm --filter @lumi/server build",
     "build:extension": "pnpm build:packages && pnpm --filter @lumi/extension build",
+    "build:mobile": "pnpm build:packages && pnpm --filter @lumi/mobile build",
     "db:generate": "pnpm --filter @lumi/server prisma generate",
     "db:migrate": "pnpm --filter @lumi/server prisma migrate dev",
     "db:init-user": "pnpm --filter @lumi/server db:init-user"
