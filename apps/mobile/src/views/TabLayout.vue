@@ -11,6 +11,12 @@
         </template>
         文章库
       </van-tabbar-item>
+      <van-tabbar-item replace to="/chat">
+        <template #icon="slotProps">
+          <van-icon :name="slotProps.active ? 'chat' : 'chat-o'" />
+        </template>
+        问答
+      </van-tabbar-item>
       <van-tabbar-item replace to="/settings">
         <template #icon="slotProps">
           <van-icon :name="slotProps.active ? 'setting' : 'setting-o'" />

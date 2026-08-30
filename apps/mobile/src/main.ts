@@ -5,6 +5,7 @@ import 'vant/es/dialog/style'
 import 'vant/es/notify/style'
 import './styles/base.css'
 import './styles/reader.css'
+import './styles/knowledge-chat.css'
 import App from './App.vue'
 import { router } from './router'
 

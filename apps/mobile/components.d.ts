@@ -13,6 +13,8 @@ declare module 'vue' {
     ReaderAiSheet: typeof import('./src/components/ReaderAiSheet.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SessionListSheet: typeof import('./src/components/knowledge-chat/SessionListSheet.vue')['default']
+    ShareImportDialog: typeof import('./src/components/ShareImportDialog.vue')['default']
     TocSheet: typeof import('./src/components/TocSheet.vue')['default']
     VanBadge: typeof import('vant/es')['Badge']
     VanButton: typeof import('vant/es')['Button']

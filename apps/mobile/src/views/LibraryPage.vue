@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
 import type { DocumentSummary } from '@lumi/shared'
-import { showToast } from 'vant'
+import { showConfirmDialog, showToast } from 'vant'
 import ArticleCell from '../components/ArticleCell.vue'
 import { client } from '../lib/client'
 
@@ -143,6 +143,25 @@ async function archiveArticle(article: DocumentSummary) {
   }
 }
 
+async function requestDeleteArticle(article: DocumentSummary) {
+  try {
+    await showConfirmDialog({
+      title: '删除文章',
+      message: `确认删除《${article.title}》吗？文章会进入回收站。`,
+    })
+  } catch {
+    return
+  }
+  try {
+    await client.documents.delete(article.id)
+    items.value = items.value.filter((item) => item.id !== article.id)
+    total.value = Math.max(0, total.value - 1)
+    showToast('已移入回收站')
+  } catch (error) {
+    showToast(getErrorMessage(error, '删除失败'))
+  }
+}
+
 async function beforeImportClose(action: string): Promise<boolean> {
   if (action !== 'confirm') return true
   const url = importUrl.value.trim()
@@ -168,6 +187,14 @@ async function beforeImportClose(action: string): Promise<boolean> {
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof LumiApiError ? error.message : fallback
 }
+
+/** 分享导入等外部入口产生新文档后，通过窗口事件请求文章库重置刷新。 */
+function onExternalRefresh() {
+  resetList()
+}
+
+onMounted(() => window.addEventListener('lumi:library-refresh', onExternalRefresh))
+onBeforeUnmount(() => window.removeEventListener('lumi:library-refresh', onExternalRefresh))
 </script>
 
 <template>
@@ -202,6 +229,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
             @open="router.push(`/article/${article.id}`)"
             @toggle-favorite="toggleFavorite(article)"
             @archive="archiveArticle(article)"
+            @request-delete="requestDeleteArticle(article)"
           />
           <van-empty
             v-if="finished && items.length === 0"

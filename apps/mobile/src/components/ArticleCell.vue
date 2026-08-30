@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { DocumentSummary } from '@lumi/shared'
 import { formatDate, formatWordCount } from '../lib/format'
 
@@ -9,7 +9,19 @@ const emit = defineEmits<{
   open: []
   'toggle-favorite': []
   archive: []
+  'request-delete': []
 }>()
+
+// SwipeCell 实例类型未导出 close，这里用无泛型 ref 规避模板引用的类型检查
+const swipeRef = ref()
+
+/** 触发滑动操作前先收起滑动区，避免确认/操作后卡片停留在展开态。 */
+function act(action: 'toggle-favorite' | 'archive' | 'request-delete') {
+  swipeRef.value?.close?.()
+  if (action === 'toggle-favorite') emit('toggle-favorite')
+  else if (action === 'archive') emit('archive')
+  else emit('request-delete')
+}
 
 const ingestLabel = computed(() => {
   if (props.article.ingestStatus === 'pending' || props.article.ingestStatus === 'processing') {
@@ -35,7 +47,7 @@ const metaLine = computed(() =>
 </script>
 
 <template>
-  <van-swipe-cell class="article-cell">
+  <van-swipe-cell ref="swipeRef" class="article-cell">
     <article class="cell-body" @click="emit('open')">
       <div class="cell-main">
         <h3 class="cell-title clamp-2" :class="{ 'is-unread': article.readingStatus === 'unread' }">
@@ -67,10 +79,11 @@ const metaLine = computed(() =>
     </article>
 
     <template #right>
-      <van-button class="cell-action" square type="primary" @click="emit('toggle-favorite')">
+      <van-button class="cell-action is-favorite" square @click="act('toggle-favorite')">
         {{ favoriteLabel }}
       </van-button>
-      <van-button class="cell-action is-archive" square @click="emit('archive')">归档</van-button>
+      <van-button class="cell-action is-archive" square @click="act('archive')">归档</van-button>
+      <van-button class="cell-action is-delete" square @click="act('request-delete')">删除</van-button>
     </template>
   </van-swipe-cell>
 </template>
@@ -148,7 +161,7 @@ const metaLine = computed(() =>
 
 .cell-star {
   margin-left: auto;
-  color: var(--lumi-fg-primary);
+  color: #f59e0b;
   font-size: 12px;
 }
 
@@ -176,8 +189,19 @@ const metaLine = computed(() =>
   font-weight: 400;
 }
 
+/* 滑动操作功能色：收藏琥珀 / 归档蓝 / 删除红（红沿用 --lumi-danger） */
+.cell-action.is-favorite {
+  color: #ffffff;
+  background: #f59e0b;
+}
+
 .cell-action.is-archive {
   color: #ffffff;
-  background: var(--lumi-fg-tertiary);
+  background: #3b82f6;
+}
+
+.cell-action.is-delete {
+  color: #ffffff;
+  background: var(--lumi-danger);
 }
 </style>

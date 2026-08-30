@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { hasServerUrl, TOKEN_KEY } from '../lib/client'
+import KnowledgeChatPage from '../views/KnowledgeChatPage.vue'
 import LibraryPage from '../views/LibraryPage.vue'
 import LoginPage from '../views/LoginPage.vue'
 import ReaderPage from '../views/ReaderPage.vue'
@@ -17,6 +18,7 @@ export const router = createRouter({
       meta: { requiresAuth: true },
       children: [
         { path: 'library', component: LibraryPage },
+        { path: 'chat', component: KnowledgeChatPage },
         { path: 'settings', component: SettingsPage },
       ],
     },
@@ -24,6 +26,11 @@ export const router = createRouter({
       path: '/article/:id',
       component: ReaderPage,
       meta: { requiresAuth: true },
+    },
+    {
+      // 分享深链的兜底路由：WebView 若真的导航到 /_share，直接回文章库
+      path: '/_share',
+      redirect: '/library',
     },
     {
       path: '/login',

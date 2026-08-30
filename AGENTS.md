@@ -47,7 +47,7 @@ pnpm db:generate / db:migrate / db:init-user
 
 ## Web
 
-视觉方向：安静的阅读产品（对标 shadcn/ui、Notion、Readwise Reader、Linear）——只用黑白灰，zinc/neutral 中性色表面，细边框、小圆角、浅阴影。不用蓝/琥珀/紫强调色，不用重渐变和超大胶囊形。标签是浅灰底、无边框。
+视觉方向：安静的阅读产品（对标 shadcn/ui、Notion、Readwise Reader、Linear）——只用黑白灰，zinc/neutral 中性色表面，细边框、小圆角、浅阴影。不用蓝/琥珀/紫强调色，不用重渐变和超大胶囊形。标签是浅灰底、无边框。例外：移动端滑动操作按钮用功能色（收藏琥珀 `#f59e0b` / 归档蓝 `#3b82f6` / 删除红 `--lumi-danger`），收藏星标同琥珀色。
   
 - 前端统一使用 shadcn/ui 风格：可复用组件在 `apps/web/src/components/ui`（Button、Input、Select、Card、Badge、Tabs、Dialog、EmptyState、SearchInput、Toaster）。优先使用它们，再考虑页面局部控件；toast 反馈走 `composables/useToast.ts`。
 - 图标统一使用已安装的 `lucide-vue-next` 图标库，不引入其他图标方案。
@@ -61,7 +61,12 @@ pnpm db:generate / db:migrate / db:init-user
 
 - popup 通过 `client.ingest.*` 保存当前 URL、整页 HTML 和选中内容；options 页配置地址和登录（存 `browser.storage.local`）。
 - 扩展端不清洗抓取的 HTML；解析和净化统一在服务端 `@lumi/parser` 完成。
+
+## 移动端
+
 - 移动端服务器地址是运行时配置（localStorage，首次进 `/setup`），不是构建时 env；改地址后必须整页跳转重建 `client` 单例。AI/Embedding 配置管理只在桌面 Web，移动端只做消费和轻交互。
+- 知识库问答是第三个 tab（`/chat`）：轻会话历史（列表弹层：新建/左滑删除带确认，无重命名），进 tab 默认载最近会话；组合式函数 `useKnowledgeChat` 适配自 web 同名文件（无重命名、错误提示由调用方注入 notify、引用跳 `/article/:id` 不带偏移），SSE/停止/重新生成语义与 web 保持一致。回答 Markdown 复用 reader.css 的 `.ai-sheet-answer` 排版块。
+- 分享接收：`ACTION_SEND text/plain` → `MainActivity` 改写为 `https://localhost/_share?text=...` 深链 → `@capacitor/app` 的 `appUrlOpen`/`getLaunchUrl` 通道 → 全局 `ShareImportDialog` 确认框（未配置/未登录直接丢弃）。识别到链接走 `ingest.url`，纯文本走 `ingest.selection`（服务端该接口 url 已可选，无 URL 时标题取正文首行、来源记「分享」）。真机验证清单见 `apps/mobile/README.md`。
 
 ## 实现约定
 

@@ -138,10 +138,11 @@ export class IngestService {
     userId: string,
     input: IngestSelectionRequest,
   ): Promise<IngestSelectionResponse> {
-    const url = normalizeUrl(input.url);
-    const title = input.title?.trim() || url;
     const selectedHtml = input.selectedHtml?.trim() || '';
     const selectedText = input.selectedText?.trim() || '';
+    // 手机端分享进来的纯文本没有来源页，url 允许缺省。
+    const url = input.url?.trim() ? normalizeUrl(input.url) : '';
+    const title = input.title?.trim() || selectionTitleFallback(selectedText, url);
     validateSelection(selectedHtml, selectedText);
 
     const job = await this.prisma.ingestJob.create({
@@ -149,7 +150,7 @@ export class IngestService {
         userId,
         type: 'selection',
         status: 'processing',
-        inputUrl: url,
+        inputUrl: url || null,
         inputTitle: title,
         inputHtml: selectedHtml || selectedText,
         startedAt: new Date(),
@@ -171,8 +172,8 @@ export class IngestService {
           userId,
           type: 'fragment',
           title: `摘录：${title}`,
-          url,
-          source: parsed.siteName || getSourceFromUrl(url),
+          url: url || null,
+          source: parsed.siteName || getSourceFromUrl(url) || '分享',
           markdown: parsed.markdown,
           contentText: parsed.contentText,
           wordCount: parsed.wordCount,
@@ -428,6 +429,16 @@ function validateSelection(selectedHtml: string, selectedText: string) {
   if (size > MAX_SELECTION_BYTES) {
     throw new BadRequestException('选中内容过大，暂不支持保存');
   }
+}
+
+/** 无来源 URL 的选区（手机端分享文本）用正文首行作为标题兜底。 */
+function selectionTitleFallback(selectedText: string, url: string): string {
+  if (url) return url;
+  const line = selectedText
+    .split('\n')
+    .map((item) => item.trim())
+    .find(Boolean);
+  return line ? line.slice(0, 30) : '分享文本';
 }
 
 function decodeUtf8(buffer: Buffer): string {

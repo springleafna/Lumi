@@ -1,0 +1,277 @@
+/* knowledge-chat.css — 知识库问答 tab（含 v-html 注入的回答 Markdown，必须全局样式） */
+
+.chat-page {
+  display: flex;
+  flex-direction: column;
+  /* tabbar 用 placeholder 占位（50px + 底部安全区），页面占剩余空间 */
+  height: calc(100vh - var(--van-tabbar-height) - env(safe-area-inset-bottom));
+  background: var(--lumi-bg-page);
+}
+
+.chat-nav {
+  background: var(--lumi-bg-primary);
+  border-bottom: 1px solid var(--lumi-border-muted);
+}
+
+.chat-nav .van-nav-bar__title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.chat-nav-icon {
+  display: inline-flex;
+  padding: 4px;
+  color: var(--lumi-fg-primary);
+  cursor: pointer;
+}
+
+.chat-nav-icon.disabled {
+  color: var(--lumi-fg-disabled);
+}
+
+.chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 14px 4px;
+}
+
+.chat-list-loading {
+  padding: 40px 0;
+  color: var(--lumi-fg-tertiary);
+  text-align: center;
+}
+
+.chat-message {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.chat-question {
+  justify-self: end;
+  max-width: 82%;
+  padding: 9px 12px;
+  background: var(--lumi-bg-secondary);
+  border-radius: 12px 12px 4px 12px;
+  color: var(--lumi-fg-primary);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-answer-block {
+  min-width: 0;
+}
+
+/* 回答 Markdown 复用 reader.css 的 .ai-sheet-answer 排版块 */
+.chat-answer {
+  color: var(--lumi-fg-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.chat-muted {
+  color: var(--lumi-fg-tertiary);
+  font-size: 13px;
+}
+
+.chat-error {
+  margin-top: 6px;
+  color: var(--lumi-danger);
+  font-size: 12px;
+}
+
+.chat-status {
+  margin-top: 4px;
+  color: var(--lumi-fg-tertiary);
+  font-size: 11px;
+}
+
+.chat-citations {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.chat-citations-label {
+  color: var(--lumi-fg-tertiary);
+  font-size: 11px;
+}
+
+.chat-citation {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  background: var(--lumi-bg-primary);
+  border: 1px solid var(--lumi-border-muted);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.chat-citation:active {
+  background: var(--lumi-bg-secondary);
+}
+
+.chat-citation.is-deleted {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.chat-citation-title {
+  color: var(--lumi-fg-primary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.chat-citation-excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--lumi-fg-tertiary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.chat-regenerate {
+  margin-top: 10px;
+}
+
+.chat-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 8px 12px 10px;
+  background: var(--lumi-bg-primary);
+  border-top: 1px solid var(--lumi-border-muted);
+}
+
+.chat-field {
+  flex: 1;
+  padding: 7px 10px;
+  background: var(--lumi-bg-secondary);
+  border-radius: 10px;
+}
+
+.chat-field .van-field__control {
+  font-size: 14px;
+}
+
+.chat-send {
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+}
+
+/* 会话列表弹层 */
+.session-sheet {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 10px;
+}
+
+.session-sheet-header h3 {
+  color: var(--lumi-fg-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* 新会话：浅灰底无边框的轻按钮 */
+.session-sheet-header .van-button {
+  height: 30px;
+  padding: 0 12px;
+  color: var(--lumi-fg-primary);
+  background: var(--lumi-bg-secondary);
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.session-sheet-header .van-button .van-icon {
+  font-size: 13px;
+}
+
+.session-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 16px 16px;
+}
+
+.session-sheet-body .van-swipe-cell + .van-swipe-cell {
+  margin-top: 8px;
+}
+
+.session-sheet-loading {
+  padding: 40px 0;
+  text-align: center;
+}
+
+/* 会话条目是 button，必须整体重置默认边框；卡片式圆角列表 */
+.session-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  background: var(--lumi-bg-primary);
+  border: 1px solid var(--lumi-border-muted);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.session-item:active {
+  background: var(--lumi-bg-secondary);
+}
+
+.session-item.active {
+  background: var(--lumi-bg-secondary);
+  border-color: transparent;
+}
+
+.session-item:disabled {
+  opacity: 0.6;
+}
+
+.session-item-title {
+  overflow: hidden;
+  color: var(--lumi-fg-primary);
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.session-item.active .session-item-title {
+  font-weight: 600;
+}
+
+.session-item-time {
+  color: var(--lumi-fg-tertiary);
+  font-size: 11px;
+}
+
+.session-item-delete {
+  width: 64px;
+  height: 100%;
+  border-radius: 0 12px 12px 0;
+}
+
+.session-sheet-hint {
+  margin-top: 8px;
+  color: var(--lumi-fg-tertiary);
+  font-size: 11px;
+  text-align: center;
+}

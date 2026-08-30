@@ -104,7 +104,8 @@ export type IngestHtmlRequest = {
 };
 
 export type IngestSelectionRequest = {
-  url: string;
+  /** 来源页 URL；手机端分享进来的纯文本没有来源页，允许缺省。 */
+  url?: string;
   title?: string;
   selectedHtml?: string;
   selectedText?: string;

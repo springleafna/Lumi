@@ -11,6 +11,7 @@
     "open:android": "cap open android"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.0",
     "@lumi/api-client": "workspace:*",
     "@lumi/shared": "workspace:*",
