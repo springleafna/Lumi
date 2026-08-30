@@ -37,7 +37,7 @@ pnpm db:generate / db:migrate / db:init-user
 
 ## 服务端要点
 
-- 认证为 JWT；管理员由 `db:init-user` 初始化；文档按用户隔离。
+- 认证为 JWT；管理员由 `db:init-user` 初始化；文档按用户隔离。注册默认开放（`POST /api/auth/register`，web/mobile 均有注册页），`AUTH_REGISTER_ENABLED=false` 可关闭。
 - 导入是异步的：API 创建占位文档 + BullMQ 任务，worker 负责抓取/解析/图片归档/落库，然后接着投递 AI 分析和向量索引任务。Redis 必须先启动。
 - 文档状态字段：`deletedAt`（回收站）、`archivedAt`（归档）、`ingestStatus`（占位/解析进度）、`readingStatus`（`unread`/`read`；详情页会把解析成功且非回收站的未读文档自动标为已读）、`favoritedAt`（独立于归档和阅读状态）、本地文件导入 `source = 本地`。
 - 标签是手动纯文本标签；AI 生成的标签写入同一体系，保持可编辑。

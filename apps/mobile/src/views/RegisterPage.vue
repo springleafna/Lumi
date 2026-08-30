@@ -7,21 +7,35 @@ import { useAuth } from '../composables/useAuth'
 
 const route = useRoute()
 const router = useRouter()
-const { login } = useAuth()
+const { register } = useAuth()
 
-const username = ref('admin')
+const username = ref('')
 const password = ref('')
+const confirmPassword = ref('')
 const submitting = ref(false)
 
+function validate(): string {
+  const name = username.value.trim()
+  if (name.length < 2 || name.length > 32) return '用户名长度需为 2-32 个字符'
+  if (password.value.length < 6 || password.value.length > 64) return '密码长度需为 6-64 位'
+  if (password.value !== confirmPassword.value) return '两次输入的密码不一致'
+  return ''
+}
+
 async function submit() {
-  if (!username.value.trim() || !password.value) return
+  const invalid = validate()
+  if (invalid) {
+    showNotify({ type: 'danger', message: invalid })
+    return
+  }
   submitting.value = true
   try {
-    await login(username.value.trim(), password.value)
+    await register(username.value.trim(), password.value)
+    showNotify({ type: 'success', message: '注册成功' })
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/library'
     router.replace(redirect)
   } catch (error) {
-    const message = error instanceof LumiApiError ? error.message : '登录失败，请稍后重试'
+    const message = error instanceof LumiApiError ? error.message : '注册失败，请稍后重试'
     showNotify({ type: 'danger', message })
   } finally {
     submitting.value = false
@@ -33,28 +47,35 @@ async function submit() {
   <div class="login-page safe-area-top safe-area-bottom">
     <div class="login-brand">
       <img class="login-logo" src="../assets/lumi-logo.svg" alt="Lumi" />
-      <h1>登录 Lumi</h1>
+      <h1>注册 Lumi</h1>
     </div>
 
     <div class="login-form">
-      <van-field v-model="username" label="用户名" placeholder="用户名" clearable />
+      <van-field v-model="username" label="用户名" placeholder="2-32 个字符" clearable />
       <van-field
         v-model="password"
         type="password"
         label="密码"
-        placeholder="密码"
+        placeholder="至少 6 位"
+        @keyup.enter="submit"
+      />
+      <van-field
+        v-model="confirmPassword"
+        type="password"
+        label="确认密码"
+        placeholder="再次输入密码"
         @keyup.enter="submit"
       />
       <van-button type="primary" block round :loading="submitting" @click="submit">
-        登录
+        注册
       </van-button>
-      <RouterLink class="login-switch" to="/register">还没有账号？去注册</RouterLink>
+      <RouterLink class="register-switch" to="/login">已有账号？直接登录</RouterLink>
     </div>
   </div>
 </template>
 
 <style scoped>
-.login-switch {
+.register-switch {
   display: block;
   margin-top: 16px;
   color: var(--lumi-fg-tertiary);
@@ -62,7 +83,7 @@ async function submit() {
   text-align: center;
 }
 
-.login-switch:active {
+.register-switch:active {
   color: var(--lumi-fg-primary);
 }
 </style>

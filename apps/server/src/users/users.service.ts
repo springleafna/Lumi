@@ -11,6 +11,13 @@ export class UsersService {
     });
   }
 
+  createUser(input: { username: string; password: string }) {
+    return this.prisma.user.create({
+      data: input,
+      select: { id: true, username: true },
+    });
+  }
+
   findPublicById(id: string) {
     return this.prisma.user.findUnique({
       where: { id },

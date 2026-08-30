@@ -16,6 +16,14 @@ export function useAuth() {
     return result.user
   }
 
+  async function register(username: string, password: string) {
+    const result = await client.auth.register({ username, password })
+    localStorage.setItem(TOKEN_KEY, result.accessToken)
+    token.value = result.accessToken
+    user.value = result.user
+    return result.user
+  }
+
   async function loadMe() {
     if (!token.value) return null
 
@@ -39,6 +47,7 @@ export function useAuth() {
     user,
     isAuthenticated,
     login,
+    register,
     loadMe,
     logout,
   }

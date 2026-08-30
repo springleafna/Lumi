@@ -28,6 +28,7 @@ import type {
   LoginRequest,
   LoginResponse,
   PageResult,
+  RegisterRequest,
   RetryAiAnalysisResponse,
   RetryEmbeddingJobResponse,
   RetryIngestResponse,
@@ -81,6 +82,8 @@ export function createLumiClient(options: LumiClientOptions) {
     auth: {
       login: (payload: LoginRequest) =>
         request<LoginResponse>(http, 'post', '/auth/login', payload),
+      register: (payload: RegisterRequest) =>
+        request<LoginResponse>(http, 'post', '/auth/register', payload),
       me: () => request<UserDto>(http, 'get', '/auth/me'),
     },
     ingest: {

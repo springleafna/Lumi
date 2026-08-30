@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Eye, EyeOff, LogIn } from 'lucide-vue-next'
+import { Eye, EyeOff, UserPlus } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
@@ -12,27 +12,44 @@ import lumiLogo from '../assets/lumi-logo.svg'
 
 const route = useRoute()
 const router = useRouter()
-const { login } = useAuth()
+const { register } = useAuth()
 const { toast } = useToast()
 
-const username = ref('admin')
-const password = ref('admin123456')
+const username = ref('')
+const password = ref('')
+const confirmPassword = ref('')
 const showPassword = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
 
+function validate(): string {
+  const name = username.value.trim()
+  if (name.length < 2 || name.length > 32) {
+    return '用户名长度需为 2-32 个字符'
+  }
+  if (password.value.length < 6 || password.value.length > 64) {
+    return '密码长度需为 6-64 位'
+  }
+  if (password.value !== confirmPassword.value) {
+    return '两次输入的密码不一致'
+  }
+  return ''
+}
+
 async function submit() {
-  errorMessage.value = ''
+  errorMessage.value = validate()
+  if (errorMessage.value) return
+
   loading.value = true
   try {
-    await login(username.value, password.value)
-    toast({ title: '登录成功', description: '欢迎回到 Lumi。', variant: 'success' })
+    await register(username.value.trim(), password.value)
+    toast({ title: '注册成功', description: '欢迎来到 Lumi。', variant: 'success' })
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/documents'
     await router.push(redirect)
   } catch (error) {
-    errorMessage.value = error instanceof LumiApiError ? error.message : '登录失败，请稍后重试'
+    errorMessage.value = error instanceof LumiApiError ? error.message : '注册失败，请稍后重试'
     toast({
-      title: '登录失败',
+      title: '注册失败',
       description: errorMessage.value,
       variant: 'destructive',
     })
@@ -51,16 +68,20 @@ async function submit() {
         </div>
         <div>
           <p class="kicker">Lumi</p>
-          <h1>进入阅读库</h1>
+          <h1>创建账号</h1>
         </div>
       </div>
 
-      <p class="auth-copy">登录后继续导入、整理和阅读你的图文知识库。</p>
+      <p class="auth-copy">注册后即可导入、整理和阅读你的图文知识库。</p>
 
       <form class="auth-form" @submit.prevent="submit">
         <label class="field-group">
           <span>用户名</span>
-          <UiInput v-model.trim="username" autocomplete="username" placeholder="admin" />
+          <UiInput
+            v-model.trim="username"
+            autocomplete="username"
+            placeholder="2-32 个字符"
+          />
         </label>
         <label class="field-group">
           <span>密码</span>
@@ -68,8 +89,8 @@ async function submit() {
             <UiInput
               v-model="password"
               :type="showPassword ? 'text' : 'password'"
-              autocomplete="current-password"
-              placeholder="admin123456"
+              autocomplete="new-password"
+              placeholder="至少 6 位"
             />
             <button
               type="button"
@@ -83,35 +104,31 @@ async function submit() {
             </button>
           </div>
         </label>
+        <label class="field-group">
+          <span>确认密码</span>
+          <UiInput
+            v-model="confirmPassword"
+            :type="showPassword ? 'text' : 'password'"
+            autocomplete="new-password"
+            placeholder="再次输入密码"
+          />
+        </label>
         <p v-if="errorMessage" class="inline-alert">{{ errorMessage }}</p>
         <UiButton class="auth-submit" :disabled="loading" type="submit">
-          <LogIn :size="17" />
-          {{ loading ? '登录中...' : '登录' }}
+          <UserPlus :size="17" />
+          {{ loading ? '注册中...' : '注册' }}
         </UiButton>
       </form>
 
       <p class="auth-switch">
-        还没有账号？
-        <RouterLink to="/register">注册一个</RouterLink>
+        已有账号？
+        <RouterLink to="/login">直接登录</RouterLink>
       </p>
     </UiCard>
   </main>
 </template>
 
 <style scoped>
-.auth-switch {
-  margin-top: 14px;
-  color: var(--fg-muted);
-  font-size: 13px;
-  text-align: center;
-}
-
-.auth-switch a {
-  color: var(--fg-primary);
-  font-weight: 500;
-  text-underline-offset: 3px;
-}
-
 .password-field {
   position: relative;
 }
@@ -141,5 +158,18 @@ async function submit() {
 .password-toggle:hover {
   color: var(--fg-primary);
   background: var(--bg-secondary);
+}
+
+.auth-switch {
+  margin-top: 14px;
+  color: var(--fg-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.auth-switch a {
+  color: var(--fg-primary);
+  font-weight: 500;
+  text-underline-offset: 3px;
 }
 </style>

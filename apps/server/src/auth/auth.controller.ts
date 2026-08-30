@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import type { LoginRequest, UserDto } from '@lumi/shared';
+import type { LoginRequest, RegisterRequest, UserDto } from '@lumi/shared';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './current-user.decorator';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -11,6 +11,11 @@ export class AuthController {
   @Post('login')
   login(@Body() body: LoginRequest) {
     return this.authService.login(body);
+  }
+
+  @Post('register')
+  register(@Body() body: RegisterRequest) {
+    return this.authService.register(body);
   }
 
   @Get('me')

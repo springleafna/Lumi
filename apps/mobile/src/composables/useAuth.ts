@@ -14,6 +14,14 @@ async function login(username: string, password: string) {
   return result.user
 }
 
+async function register(username: string, password: string) {
+  const result = await client.auth.register({ username, password })
+  localStorage.setItem(TOKEN_KEY, result.accessToken)
+  token.value = result.accessToken
+  user.value = result.user
+  return result.user
+}
+
 async function loadMe() {
   try {
     user.value = await client.auth.me()
@@ -30,5 +38,5 @@ function logout() {
 }
 
 export function useAuth() {
-  return { token, user, isAuthenticated, login, loadMe, logout }
+  return { token, user, isAuthenticated, login, register, loadMe, logout }
 }

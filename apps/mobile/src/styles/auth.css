@@ -1,0 +1,31 @@
+/* auth.css — 登录 / 注册等认证页共享布局（LoginPage 与 RegisterPage 复用） */
+
+.login-page {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  padding: 32px 24px;
+  background: var(--lumi-bg-primary);
+}
+
+.login-brand {
+  margin-bottom: 36px;
+  text-align: center;
+}
+
+.login-logo {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 12px;
+}
+
+.login-brand h1 {
+  color: var(--lumi-fg-primary);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.login-form .van-button {
+  margin-top: 24px;
+}

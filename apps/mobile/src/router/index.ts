@@ -4,6 +4,7 @@ import KnowledgeChatPage from '../views/KnowledgeChatPage.vue'
 import LibraryPage from '../views/LibraryPage.vue'
 import LoginPage from '../views/LoginPage.vue'
 import ReaderPage from '../views/ReaderPage.vue'
+import RegisterPage from '../views/RegisterPage.vue'
 import SettingsPage from '../views/SettingsPage.vue'
 import SetupPage from '../views/SetupPage.vue'
 import TabLayout from '../views/TabLayout.vue'
@@ -35,6 +36,11 @@ export const router = createRouter({
     {
       path: '/login',
       component: LoginPage,
+      meta: { guestOnly: true },
+    },
+    {
+      path: '/register',
+      component: RegisterPage,
       meta: { guestOnly: true },
     },
     {

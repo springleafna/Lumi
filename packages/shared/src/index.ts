@@ -19,6 +19,11 @@ export type LoginResponse = {
   user: UserDto;
 };
 
+export type RegisterRequest = {
+  username: string;
+  password: string;
+};
+
 export type DocumentType = 'article' | 'video' | 'audio' | 'pdf' | 'fragment';
 export type DocumentStatus = 'active' | 'archived' | 'trash';
 export type DocumentSort = 'created_desc' | 'created_asc' | 'updated_desc' | 'updated_asc';

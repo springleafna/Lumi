@@ -4,6 +4,7 @@ import DocumentDetailPage from '../views/DocumentDetailPage.vue'
 import DocumentsPage from '../views/DocumentsPage.vue'
 import KnowledgeChatPage from '../views/KnowledgeChatPage.vue'
 import LoginPage from '../views/LoginPage.vue'
+import RegisterPage from '../views/RegisterPage.vue'
 import SettingsPage from '../views/SettingsPage.vue'
 
 export const router = createRouter({
@@ -16,6 +17,11 @@ export const router = createRouter({
     {
       path: '/login',
       component: LoginPage,
+      meta: { guestOnly: true },
+    },
+    {
+      path: '/register',
+      component: RegisterPage,
       meta: { guestOnly: true },
     },
     {
