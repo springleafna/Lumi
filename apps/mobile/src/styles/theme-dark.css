@@ -1,0 +1,45 @@
+/* theme-dark.css — 深色主题：覆盖 base.css 的浅色变量组（import 顺序在 base 之后才能盖住） */
+
+.van-theme-dark {
+  /* Lumi 深色组（zinc 深阶） */
+  --lumi-fg-primary: #fafafa;
+  --lumi-fg-secondary: #d4d4d8;
+  --lumi-fg-tertiary: #71717a;
+  --lumi-fg-muted: #71717a;
+  --lumi-fg-disabled: #52525b;
+  --lumi-bg-primary: #18181b;
+  --lumi-bg-secondary: #27272a;
+  --lumi-bg-page: #09090b;
+  --lumi-border: #3f3f46;
+  --lumi-border-muted: #27272a;
+  --lumi-danger: #ef4444;
+
+  /* 批注高亮 / 划线标记 */
+  --lumi-mark-bg: #3f3f46;
+  --lumi-mark-glow: rgba(250, 250, 250, 0.18);
+
+  /* Vant 变量的深色版（覆盖 base.css 里硬编码的浅色定制） */
+  --van-primary-color: #fafafa;
+  --van-text-color: #fafafa;
+  --van-text-color-2: #d4d4d8;
+  --van-text-color-3: #71717a;
+  --van-border-color: #3f3f46;
+  --van-background: #09090b;
+  --van-background-2: #18181b;
+  --van-nav-bar-background: #18181b;
+  --van-nav-bar-title-text-color: #fafafa;
+  --van-nav-bar-icon-color: #d4d4d8;
+  --van-tabbar-background: #18181b;
+  --van-tabbar-item-active-color: #fafafa;
+  --van-tabbar-item-text-color: #71717a;
+  --van-search-background: #18181b;
+  --van-search-input-background: #27272a;
+  --van-cell-background: #18181b;
+  --van-field-label-color: #d4d4d8;
+
+  /* 主按钮反白：浅色底深字（文字用 --van-button-primary-color） */
+  --van-button-primary-background: #fafafa;
+  --van-button-primary-border-color: #fafafa;
+  --van-button-primary-color: #18181b;
+  --van-dialog-confirm-button-text-color: #fafafa;
+}

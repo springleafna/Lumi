@@ -30,6 +30,10 @@ const SHIKI_LANGS = [
  */
 export function useMarkdownRenderer(options: { html?: boolean } = {}) {
   const shikiHighlighter = ref<ShikiHighlighter | null>(null)
+  // 当前生效的代码高亮主题，由 initShiki 在新 highlighter 就绪后一并切换，
+  // 避免切换瞬间用旧 highlighter 渲染未加载的主题。
+  const activeTheme = ref<'github-light' | 'github-dark'>('github-light')
+  let initToken = 0
 
   const markdown = new MarkdownIt({
     html: options.html ?? false,
@@ -49,7 +53,7 @@ export function useMarkdownRenderer(options: { html?: boolean } = {}) {
       try {
         return highlighter.codeToHtml(token.content, {
           lang,
-          theme: 'github-light',
+          theme: activeTheme.value,
         })
       } catch {
         // Fall back to markdown-it below.
@@ -58,14 +62,21 @@ export function useMarkdownRenderer(options: { html?: boolean } = {}) {
     return defaultFence(tokens, idx, opts, env, self)
   }
 
-  async function initShiki() {
+  async function initShiki(theme: 'light' | 'dark' = 'light') {
+    const target = theme === 'dark' ? 'github-dark' : 'github-light'
+    const token = ++initToken
     try {
-      shikiHighlighter.value = await createHighlighter({
-        themes: ['github-light'],
+      const highlighter = await createHighlighter({
+        themes: [target],
         langs: SHIKI_LANGS,
       })
+      if (token !== initToken) return
+      shikiHighlighter.value = highlighter
+      activeTheme.value = target
     } catch {
-      shikiHighlighter.value = null
+      if (token === initToken) {
+        shikiHighlighter.value = null
+      }
     }
   }
 

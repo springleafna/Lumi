@@ -66,6 +66,8 @@ pnpm db:generate / db:migrate / db:init-user
 
 - 移动端服务器地址是运行时配置（localStorage，首次进 `/setup`），不是构建时 env；改地址后必须整页跳转重建 `client` 单例。AI/Embedding 配置管理只在桌面 Web，移动端只做消费和轻交互。
 - 知识库问答是第三个 tab（`/chat`）：轻会话历史（列表弹层：新建/左滑删除带确认，无重命名），进 tab 默认载最近会话；组合式函数 `useKnowledgeChat` 适配自 web 同名文件（无重命名、错误提示由调用方注入 notify、引用跳 `/article/:id` 不带偏移），SSE/停止/重新生成语义与 web 保持一致。回答 Markdown 复用 reader.css 的 `.ai-sheet-answer` 排版块。
+- 划词批注：选区检测用 `selectionchange` + 防抖（web 的 `@mouseup` 触屏不触发），见 `useReaderSelection`；浮条按钮在 pointer 落下阶段 `preventDefault` 执行动作（避免选区先塌掉）。偏移/重叠检测/前后文快照沿用 `highlight-dom.ts`（与 web 同源）。批注编辑只能改 note 字段（服务端如此），改高亮范围 = 删除重建。批注列表条目点击定位、左滑出「笔记/删除」。
+- 深色模式：`useTheme` 三档（浅/深/跟随系统，默认跟随），类挂 `html`（`van-theme-dark` + `data-theme`），Teleport 到 body 的 Toast/Dialog 才能继承；`theme-dark.css` 必须 import 在最后（要盖住 base.css 里硬编码的浅色 `--van-*` 定制）；Shiki 主题随切换重建（github-light ↔ github-dark）。
 - 分享接收：`ACTION_SEND text/plain` → `MainActivity` 改写为 `https://localhost/_share?text=...` 深链 → `@capacitor/app` 的 `appUrlOpen`/`getLaunchUrl` 通道 → 全局 `ShareImportDialog` 确认框（未配置/未登录直接丢弃）。识别到链接走 `ingest.url`，纯文本走 `ingest.selection`（服务端该接口 url 已可选，无 URL 时标题取正文首行、来源记「分享」）。真机验证清单见 `apps/mobile/README.md`。
 
 ## 实现约定

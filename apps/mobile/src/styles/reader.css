@@ -129,16 +129,49 @@
   border-top: 1px solid var(--lumi-border);
 }
 
-/* 批注高亮（只读展示 + 定位闪烁） */
+/* 划词批注浮条（深色药丸，文字取反色） */
+.selection-toolbar {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  overflow: hidden;
+  background: var(--lumi-fg-primary);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+}
+
+.selection-toolbar.is-top {
+  transform: translate(-50%, -100%);
+}
+
+.selection-toolbar.is-bottom {
+  transform: translate(-50%, 0);
+}
+
+.selection-toolbar button {
+  padding: 9px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--lumi-bg-primary);
+  font-size: 13px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.selection-toolbar button + button {
+  border-left: 1px solid rgba(127, 127, 127, 0.4);
+}
+
+/* 批注高亮（只读展示 + 定位闪烁），颜色走变量以支持深色 */
 .reader-content .reader-annotation-mark {
   padding: 0 2px;
   border-radius: 3px;
-  background: #e7e5e4;
+  background: var(--lumi-mark-bg);
   color: inherit;
 }
 
 .reader-content .reader-annotation-mark:hover {
-  background: #d6d3d1;
+  background: var(--lumi-mark-bg);
 }
 
 .reader-content .reader-annotation-mark.is-flashing {
@@ -148,13 +181,13 @@
 @keyframes reader-annotation-flash {
   0%,
   100% {
-    background: #e7e5e4;
+    background: var(--lumi-mark-bg);
     box-shadow: none;
   }
 
   30% {
-    background: #d6d3d1;
-    box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.16);
+    background: var(--lumi-mark-bg);
+    box-shadow: 0 0 0 3px var(--lumi-mark-glow);
   }
 }
 

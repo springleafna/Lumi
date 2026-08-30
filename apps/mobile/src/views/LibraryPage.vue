@@ -285,7 +285,8 @@ onBeforeUnmount(() => window.removeEventListener('lumi:library-refresh', onExter
 .library-body :deep(.van-floating-bubble) {
   width: 44px;
   height: 44px;
-  color: #ffffff;
+  /* 取反色对：浅色白底黑叉、深色深底浅叉，图标始终可见 */
+  color: var(--lumi-bg-primary);
   background: var(--lumi-fg-primary);
   border-radius: 50%;
 }

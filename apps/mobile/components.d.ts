@@ -8,11 +8,14 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AiAnalysisCard: typeof import('./src/components/reader/AiAnalysisCard.vue')['default']
     AnnotationListSheet: typeof import('./src/components/AnnotationListSheet.vue')['default']
+    AnnotationNoteSheet: typeof import('./src/components/reader/AnnotationNoteSheet.vue')['default']
     ArticleCell: typeof import('./src/components/ArticleCell.vue')['default']
     ReaderAiSheet: typeof import('./src/components/ReaderAiSheet.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SelectionToolbar: typeof import('./src/components/reader/SelectionToolbar.vue')['default']
     SessionListSheet: typeof import('./src/components/knowledge-chat/SessionListSheet.vue')['default']
     ShareImportDialog: typeof import('./src/components/ShareImportDialog.vue')['default']
     TocSheet: typeof import('./src/components/TocSheet.vue')['default']

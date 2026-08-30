@@ -3,12 +3,20 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
 import { useAuth } from '../composables/useAuth'
+import { useTheme, type ThemeMode } from '../composables/useTheme'
 import { getServerUrl, setServerUrl, TOKEN_KEY } from '../lib/client'
 
 const APP_VERSION = '0.1.0'
 
 const router = useRouter()
 const { user, loadMe, logout } = useAuth()
+const { mode: themeMode, setMode: setThemeMode } = useTheme()
+
+const THEME_OPTIONS: Array<{ value: ThemeMode; text: string }> = [
+  { value: 'light', text: '浅色' },
+  { value: 'dark', text: '深色' },
+  { value: 'system', text: '跟随系统' },
+]
 
 const serverUrl = ref(getServerUrl())
 const editDialogOpen = ref(false)
@@ -68,6 +76,24 @@ async function confirmLogout() {
       <van-cell-group inset title="账号">
         <van-cell title="当前用户" :value="user?.username || '...'" />
         <van-cell title="退出登录" is-link @click="confirmLogout" />
+      </van-cell-group>
+
+      <van-cell-group inset title="外观">
+        <van-cell
+          v-for="option in THEME_OPTIONS"
+          :key="option.value"
+          :title="option.text"
+          clickable
+          @click="setThemeMode(option.value)"
+        >
+          <template #value>
+            <van-icon
+              v-if="themeMode === option.value"
+              name="success"
+              color="var(--lumi-fg-primary)"
+            />
+          </template>
+        </van-cell>
       </van-cell-group>
 
       <van-cell-group inset title="服务器">

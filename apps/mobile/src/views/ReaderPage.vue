@@ -3,14 +3,20 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import { LumiApiError } from '@lumi/api-client'
 import type { AnnotationDto, DocumentDetail } from '@lumi/shared'
-import { showConfirmDialog, showToast } from 'vant'
+import { showConfirmDialog, showImagePreview, showToast } from 'vant'
 import AnnotationListSheet from '../components/AnnotationListSheet.vue'
 import ReaderAiSheet from '../components/ReaderAiSheet.vue'
+import AnnotationNoteSheet from '../components/reader/AnnotationNoteSheet.vue'
+import AiAnalysisCard from '../components/reader/AiAnalysisCard.vue'
+import SelectionToolbar from '../components/reader/SelectionToolbar.vue'
 import type { ReaderAiExchange } from '../lib/ai-exchange'
 import TocSheet from '../components/TocSheet.vue'
 import { useMarkdownRenderer } from '../composables/useMarkdownRenderer'
+import { useReaderSelection, type SelectionDraft } from '../composables/useReaderSelection'
 import { useRuntimeToc } from '../composables/useRuntimeToc'
+import { useTheme } from '../composables/useTheme'
 import { applyReaderHighlights } from '../lib/highlight-dom'
+import { loadReaderPosition, saveReaderPosition } from '../lib/reader-position'
 import { client } from '../lib/client'
 
 const FONT_SIZE_KEY = 'lumi_reader_font_size'
@@ -26,6 +32,7 @@ const router = useRouter()
 
 const { shikiHighlighter, initShiki, render } = useMarkdownRenderer({ html: true })
 const { tocItems, activeTocId, refresh: refreshToc, scrollToHeading } = useRuntimeToc()
+const { resolved: resolvedTheme } = useTheme()
 
 const document = ref<DocumentDetail | null>(null)
 const loading = ref(false)
@@ -45,7 +52,29 @@ const fontSize = ref(Number(localStorage.getItem(FONT_SIZE_KEY)) || 17)
 const aiExchange = ref<ReaderAiExchange | null>(null)
 const aiQuestion = ref('')
 
+// 划词批注：选区检测 → 浮条（高亮/写笔记）→ 笔记弹层（新建/编辑共用）
+const {
+  draft: selectionDraft,
+  toolbar: selectionToolbar,
+  clearSelection,
+  attach: attachSelection,
+} = useReaderSelection({
+  container: () => contentRef.value,
+  annotations: () => annotations.value,
+  onOverlap: () => showToast('该区域已有高亮'),
+  onTooLong: () => showToast('高亮内容过长，请缩短选择范围'),
+})
+
+const noteSheetOpen = ref(false)
+const noteSheetNote = ref('')
+const editingAnnotation = ref<AnnotationDto | null>(null)
+const annotationActionLoading = ref(false)
+// 弹层里输入会把正文选区收起并触发 selectionchange 清掉草稿，打开弹层前先快照
+const pendingNoteDraft = ref<SelectionDraft | null>(null)
+
 let pollingTimer: number | undefined
+let savePositionTimer: number | undefined
+let positionRestoredFor = ''
 
 const isIngestSucceeded = computed(() => document.value?.ingestStatus === 'succeeded')
 const isIngestPending = computed(
@@ -66,6 +95,12 @@ const renderedHtml = computed(() => {
   return applyReaderHighlights(html, sortedAnnotations.value, null)
 })
 
+/** 仅在分析成功时露出阅读卡，模板里避免深层可空链判断。 */
+const aiAnalysis = computed(() => {
+  const analysis = document.value?.aiAnalysis
+  return analysis && analysis.status === 'succeeded' ? analysis : null
+})
+
 const moreActions = computed(() => {
   const current = document.value
   if (!current) return []
@@ -77,22 +112,97 @@ const moreActions = computed(() => {
 })
 
 onMounted(async () => {
-  initShiki()
+  void initShiki(resolvedTheme.value)
   await loadDocument()
   pollingTimer = window.setInterval(() => {
     if (isIngestPending.value && !loading.value) void loadDocument({ silent: true })
   }, 4000)
+  window.addEventListener('scroll', onReaderScroll, { passive: true })
+  attachSelection()
+})
+
+// 深浅切换时重建 Shiki highlighter（github-light / github-dark）
+watch(resolvedTheme, (theme) => {
+  void initShiki(theme)
 })
 
 onBeforeUnmount(() => {
   if (pollingTimer) window.clearInterval(pollingTimer)
+  window.removeEventListener('scroll', onReaderScroll)
+  if (savePositionTimer !== undefined) window.clearTimeout(savePositionTimer)
+  saveScrollPosition()
 })
 
 // loading 置回 false 后正文容器才挂载，需一并监听再刷新目录。
+// 位置恢复必须等 loading 结束且正文渲染后执行：过早 scrollTo 会因
+// 页面高度不足被钳到 0，且每篇只恢复一次。
 watch([renderedHtml, loading], async () => {
   await nextTick()
   refreshToc(contentRef.value, isIngestSucceeded.value)
+  if (renderedHtml.value && !loading.value) restoreScrollPosition()
 })
+
+/** 滚过一屏才记位置，防抖 400ms。 */
+function onReaderScroll() {
+  if (savePositionTimer !== undefined) return
+  savePositionTimer = window.setTimeout(() => {
+    savePositionTimer = undefined
+    saveScrollPosition()
+  }, 400)
+}
+
+function saveScrollPosition() {
+  const current = document.value
+  if (!current || !isIngestSucceeded.value) return
+  if (window.scrollY > window.innerHeight) {
+    saveReaderPosition(current.id, window.scrollY)
+  }
+}
+
+function restoreScrollPosition() {
+  const current = document.value
+  if (!current || !isIngestSucceeded.value || positionRestoredFor === current.id) return
+  positionRestoredFor = current.id
+  const saved = loadReaderPosition(current.id)
+  if (saved <= 0) return
+
+  void (async () => {
+    const container = contentRef.value
+    // 图片加载会持续撑高版面，等图片就绪（上限 3s 兜底）再恢复，否则 scrollTo 会被钳制
+    if (container) {
+      const pending = Array.from(container.querySelectorAll('img')).filter((img) => !img.complete)
+      if (pending.length) {
+        await Promise.race([
+          Promise.all(
+            pending.map(
+              (img) =>
+                new Promise<void>((resolve) => {
+                  img.addEventListener('load', () => resolve(), { once: true })
+                  img.addEventListener('error', () => resolve(), { once: true })
+                }),
+            ),
+          ),
+          new Promise((resolve) => window.setTimeout(resolve, 3000)),
+        ])
+      }
+    }
+    // 等待期间用户已经开始滚动则不打扰
+    if (window.scrollY > 10) return
+    window.scrollTo({ top: saved })
+  })()
+}
+
+/** 点正文图片全屏预览，从被点的图开始。 */
+function onContentClick(event: MouseEvent) {
+  const target = event.target as HTMLElement
+  if (target.tagName !== 'IMG') return
+  const images = Array.from(contentRef.value?.querySelectorAll('img') || [])
+    .map((img) => img.getAttribute('src'))
+    .filter((src): src is string => Boolean(src))
+  if (!images.length) return
+  const index = images.indexOf(target.getAttribute('src') || '')
+  void showImagePreview({ images, startPosition: Math.max(0, index), closeable: true })
+}
 
 function backToLibrary() {
   const back = router.options.history.state.back
@@ -192,6 +302,97 @@ function scrollToAnnotation(id: string) {
   void (element as HTMLElement).offsetWidth
   element.classList.add('is-flashing')
   window.setTimeout(() => element.classList.remove('is-flashing'), 1300)
+}
+
+/** 创建批注；note 为空即纯高亮。草稿可能来自划词（高亮）或弹层快照（写批注）。 */
+async function createAnnotation(draft: SelectionDraft | null, note: string | null) {
+  const current = document.value
+  if (!current || !draft) return
+  annotationActionLoading.value = true
+  try {
+    const annotation = await client.documents.createAnnotation(current.id, {
+      ...draft,
+      note,
+    })
+    annotations.value = [...annotations.value, annotation]
+    noteSheetOpen.value = false
+    clearSelection()
+    showToast(note ? '批注已添加' : '高亮已添加')
+  } catch (error) {
+    showToast(error instanceof LumiApiError ? error.message : '高亮保存失败')
+  } finally {
+    annotationActionLoading.value = false
+  }
+}
+
+function onToolbarHighlight() {
+  void createAnnotation(selectionDraft.value, null)
+}
+
+function onToolbarNote() {
+  const draft = selectionDraft.value
+  if (!draft) return
+  // 草稿快照给弹层保存用，正文选区随后会因输入框聚焦而收起
+  pendingNoteDraft.value = draft
+  selectionToolbar.value = { ...selectionToolbar.value, visible: false }
+  editingAnnotation.value = null
+  noteSheetNote.value = ''
+  noteSheetOpen.value = true
+}
+
+function onEditNote(annotation: AnnotationDto) {
+  editingAnnotation.value = annotation
+  noteSheetNote.value = annotation.note || ''
+  noteSheetOpen.value = true
+}
+async function onSaveNote(note: string) {
+  const editing = editingAnnotation.value
+  const current = document.value
+  if (editing && current) {
+    annotationActionLoading.value = true
+    try {
+      const updated = await client.documents.updateAnnotation(current.id, editing.id, {
+        note: note || null,
+      })
+      annotations.value = annotations.value.map((item) =>
+        item.id === updated.id ? updated : item,
+      )
+      noteSheetOpen.value = false
+      showToast(note ? '批注已更新' : '已改为纯高亮')
+    } catch (error) {
+      showToast(error instanceof LumiApiError ? error.message : '批注保存失败')
+    } finally {
+      annotationActionLoading.value = false
+    }
+    return
+  }
+  const draft = pendingNoteDraft.value
+  pendingNoteDraft.value = null
+  await createAnnotation(draft, note || null)
+}
+
+async function onRequestDeleteAnnotation(annotation: AnnotationDto) {
+  const preview = annotation.selectedText.slice(0, 20)
+  try {
+    await showConfirmDialog({
+      title: '删除批注',
+      message: `确认删除该批注吗？高亮「${preview}」会一并移除，且不可恢复。`,
+    })
+  } catch {
+    return
+  }
+  const current = document.value
+  if (!current) return
+  annotationActionLoading.value = true
+  try {
+    await client.documents.deleteAnnotation(current.id, annotation.id)
+    annotations.value = annotations.value.filter((item) => item.id !== annotation.id)
+    showToast('高亮已删除')
+  } catch (error) {
+    showToast(error instanceof LumiApiError ? error.message : '删除高亮失败')
+  } finally {
+    annotationActionLoading.value = false
+  }
 }
 
 function onTocNavigate(id: string) {
@@ -297,13 +498,16 @@ async function onMoreSelect(action: { text: string; value: string }) {
         </van-empty>
       </div>
 
-      <article
-        v-else
-        ref="contentRef"
-        class="reader-content"
-        :style="{ '--reader-font-size': `${fontSize}px` }"
-        v-html="renderedHtml"
-      ></article>
+      <template v-else>
+        <AiAnalysisCard v-if="aiAnalysis" :key="document?.id" :analysis="aiAnalysis" />
+        <article
+          ref="contentRef"
+          class="reader-content"
+          :style="{ '--reader-font-size': `${fontSize}px` }"
+          v-html="renderedHtml"
+          @click="onContentClick"
+        ></article>
+      </template>
     </div>
 
     <nav v-if="isIngestSucceeded" class="reader-toolbar safe-area-bottom">
@@ -347,6 +551,8 @@ async function onMoreSelect(action: { text: string; value: string }) {
       :annotations="annotations"
       :loading="annotationsLoading"
       @locate="scrollToAnnotation"
+      @request-edit="onEditNote"
+      @request-delete="onRequestDeleteAnnotation"
     />
     <ReaderAiSheet
       v-model:open="aiOpen"
@@ -354,6 +560,18 @@ async function onMoreSelect(action: { text: string; value: string }) {
       :ingest-succeeded="isIngestSucceeded"
       :exchange="aiExchange"
       @ask="askAi"
+    />
+
+    <SelectionToolbar
+      :state="selectionToolbar"
+      @highlight="onToolbarHighlight"
+      @note="onToolbarNote"
+    />
+    <AnnotationNoteSheet
+      v-model:open="noteSheetOpen"
+      :note="noteSheetNote"
+      :editing="Boolean(editingAnnotation)"
+      @save="onSaveNote"
     />
   </div>
 </template>

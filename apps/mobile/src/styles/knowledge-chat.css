@@ -222,15 +222,11 @@
 
 /* 会话条目是 button，必须整体重置默认边框；卡片式圆角列表 */
 .session-item {
-  display: grid;
-  gap: 4px;
-  width: 100%;
-  padding: 12px 14px;
-  text-align: left;
+  display: flex;
+  align-items: stretch;
   background: var(--lumi-bg-primary);
   border: 1px solid var(--lumi-border-muted);
   border-radius: 12px;
-  cursor: pointer;
 }
 
 .session-item:active {
@@ -242,8 +238,36 @@
   border-color: transparent;
 }
 
-.session-item:disabled {
+.session-item-main {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+  align-content: center;
+  padding: 12px 0 12px 14px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-item-main:disabled {
   opacity: 0.6;
+}
+
+.session-item-more {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--lumi-fg-tertiary);
+  cursor: pointer;
+}
+
+.session-item-more:disabled {
+  opacity: 0.5;
 }
 
 .session-item-title {

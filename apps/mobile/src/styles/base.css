@@ -14,6 +14,10 @@
   --lumi-border-muted: #f4f4f5;
   --lumi-danger: #dc2626;
 
+  /* 批注高亮 / 划线标记（深色版见 theme-dark.css） */
+  --lumi-mark-bg: #e7e5e4;
+  --lumi-mark-glow: rgba(24, 24, 27, 0.16);
+
   /* Vant 主题定制 */
   --van-primary-color: #18181b;
   --van-text-color: #18181b;

@@ -16,6 +16,15 @@ const emit = defineEmits<{
   'request-delete': [session: KnowledgeChatSessionDto]
 }>()
 
+// 条目上的显式「⋯」菜单：左滑在鼠标环境（桌面调试）里不可用，保证删除始终可达
+const SESSION_ACTIONS = [
+  { text: '删除', value: 'delete', color: 'var(--lumi-danger)' },
+]
+
+function onItemAction(action: { value: string }, session: KnowledgeChatSessionDto) {
+  if (action.value === 'delete') emit('request-delete', session)
+}
+
 function formatDate(value?: string | null) {
   if (!value) return ''
   return new Intl.DateTimeFormat('zh-CN', {
@@ -54,16 +63,33 @@ function formatDate(value?: string | null) {
       </div>
       <van-empty v-else-if="sessions.length === 0" description="暂无会话" />
       <van-swipe-cell v-else v-for="session in sessions" :key="session.id">
-        <button
-          class="session-item"
-          :class="{ active: session.id === activeId }"
-          type="button"
-          :disabled="streaming"
-          @click="emit('select', session.id)"
-        >
-          <span class="session-item-title">{{ session.title }}</span>
-          <small class="session-item-time">{{ formatDate(session.updatedAt) }}</small>
-        </button>
+        <div class="session-item" :class="{ active: session.id === activeId }">
+          <button
+            class="session-item-main"
+            type="button"
+            :disabled="streaming"
+            @click="emit('select', session.id)"
+          >
+            <span class="session-item-title">{{ session.title }}</span>
+            <small class="session-item-time">{{ formatDate(session.updatedAt) }}</small>
+          </button>
+          <van-popover
+            placement="left"
+            :actions="SESSION_ACTIONS"
+            @select="(action: { value: string }) => onItemAction(action, session)"
+          >
+            <template #reference>
+              <button
+                class="session-item-more"
+                type="button"
+                aria-label="会话操作"
+                :disabled="streaming && session.id === activeId"
+              >
+                <van-icon name="ellipsis" size="16" />
+              </button>
+            </template>
+          </van-popover>
+        </div>
         <template #right>
           <van-button
             class="session-item-delete"
