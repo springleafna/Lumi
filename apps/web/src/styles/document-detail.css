@@ -27,6 +27,8 @@
 .article-detail {
   max-width: 720px;
   margin: 0 auto;
+  /* 正文里的长路径/超长 token 换行，避免把文章列撑宽盖到目录上 */
+  overflow-wrap: anywhere;
 }
 
 .article-detail-header {
@@ -124,6 +126,7 @@
   font-size: var(--text-xs);
   line-height: var(--leading-normal);
   text-align: left;
+  overflow-wrap: anywhere;
   transition:
     background 150ms cubic-bezier(0.2, 0, 0, 1),
     color 150ms cubic-bezier(0.2, 0, 0, 1);

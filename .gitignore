@@ -7,6 +7,7 @@ dist
 *.log
 logs
 .zcode
+.tmp-repro
 pnpm-lock.yaml.tmp
 apps/server/src/generated/prisma
 

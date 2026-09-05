@@ -122,9 +122,11 @@
 }
 
 .markdown-reader table {
+  display: block;
   width: 100%;
   border-collapse: collapse;
   font-size: var(--text-sm);
+  overflow-x: auto;
 }
 
 .markdown-reader th,
