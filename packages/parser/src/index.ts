@@ -60,6 +60,50 @@ const CONTENT_IMAGE_ATTRIBUTES = [
 
 const SRCSET_ATTRIBUTES = ['srcset', 'data-srcset', 'data-lazy-srcset'];
 
+// 部分站点（如 hexo 系博客）把代码块渲染成「行号列 + 代码列」的两列表格，
+// turndown 无法把这类含多行 <pre> 的表格转成 Markdown，会在正文里残留原生 HTML，
+// 阅读端就会看到孤立的行号窄条。转换前先把它们合并回单个代码块。
+const INLINE_CODE_TAGS = new Set([
+  'A',
+  'ABBR',
+  'B',
+  'BDI',
+  'BDO',
+  'CITE',
+  'CODE',
+  'DEL',
+  'EM',
+  'I',
+  'INS',
+  'KBD',
+  'MARK',
+  'Q',
+  'S',
+  'SAMP',
+  'SMALL',
+  'SPAN',
+  'STRONG',
+  'SUB',
+  'SUP',
+  'U',
+  'VAR',
+]);
+
+const TEXT_BLOCK_TAGS = new Set([
+  'BLOCKQUOTE',
+  'CAPTION',
+  'DD',
+  'DT',
+  'FIGCAPTION',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H5',
+  'H6',
+  'P',
+]);
+
 const NOISE_SELECTOR =
   [
     'nav',
@@ -96,6 +140,7 @@ export async function parseArticleFromHtml(
   const contentRoot = contentDom.window.document.querySelector('main')!;
   removeNoiseNodes(contentRoot);
   normalizeDocumentResources(contentDom.window.document, input.url);
+  collapseCodeGutterTables(contentRoot);
 
   const cleanHtml = sanitizeReaderHtml(contentRoot.innerHTML, input.url);
   const markdown = createTurndownService().turndown(cleanHtml).trim();
@@ -158,6 +203,7 @@ export async function parseFragmentToMarkdown(
       normalizeDocumentResources(dom.window.document, input.url);
       const main = dom.window.document.querySelector('main')!;
       removeNoiseNodes(main);
+      collapseCodeGutterTables(main);
       const cleanHtml = sanitizeReaderHtml(main.innerHTML, input.url);
       const markdown = createTurndownService().turndown(cleanHtml).trim();
       const contentText = htmlToText(cleanHtml) || normalizeText(rawText || '');
@@ -279,6 +325,105 @@ function removeNoiseNodes(root?: Element | null) {
   if (!root) return;
   for (const element of Array.from(root.querySelectorAll(NOISE_SELECTOR))) {
     element.remove();
+  }
+}
+
+function isPureLineNumberCell(cell: Element): boolean {
+  const lines = (cell.textContent ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  return lines.length > 0 && lines.every((line) => /^\d+$/.test(line));
+}
+
+// 把代码列还原成纯文本；遇到无法可靠转为文本的结构（图片、嵌套表格等）返回 null。
+function collectCodeLines(element: Element, lines: string[]): boolean {
+  if (element.tagName === 'PRE') {
+    lines.push((element.textContent ?? '').replace(/\s+$/, ''));
+    return true;
+  }
+  if (element.tagName === 'HR') {
+    lines.push('---');
+    return true;
+  }
+  if (element.tagName === 'BR') {
+    lines.push('');
+    return true;
+  }
+  if (element.tagName === 'UL' || element.tagName === 'OL') {
+    for (const item of Array.from(element.children)) {
+      if (item.tagName !== 'LI') return false;
+      const text = (item.textContent ?? '').trim();
+      if (text) lines.push(text);
+    }
+    return true;
+  }
+  if (TEXT_BLOCK_TAGS.has(element.tagName) || INLINE_CODE_TAGS.has(element.tagName)) {
+    const text = (element.textContent ?? '').trim();
+    if (text) lines.push(text);
+    return true;
+  }
+  if (element.tagName === 'DIV') {
+    for (const node of Array.from(element.childNodes)) {
+      if (node.nodeType === 3) {
+        if ((node.textContent ?? '').trim()) return false;
+        continue;
+      }
+      if (node.nodeType !== 1) return false;
+      if (!collectCodeLines(node as Element, lines)) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+function extractCodeCellText(cell: Element): string | null {
+  if (!cell.querySelector('pre, code')) return null;
+
+  const lines: string[] = [];
+  for (const node of Array.from(cell.childNodes)) {
+    if (node.nodeType === 3) {
+      if ((node.textContent ?? '').trim()) return null;
+      continue;
+    }
+    if (node.nodeType !== 1) return null;
+    if (!collectCodeLines(node as Element, lines)) return null;
+  }
+
+  return (
+    lines
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^\n+/, '')
+      .trim() || null
+  );
+}
+
+function collapseCodeGutterTables(root: Element) {
+  for (const table of Array.from(root.querySelectorAll('table'))) {
+    const rows = Array.from((table as HTMLTableElement).rows);
+    if (rows.length !== 1) continue;
+
+    const cells = Array.from(rows[0].cells);
+    if (cells.length !== 2) continue;
+
+    const numberCell = isPureLineNumberCell(cells[0])
+      ? cells[0]
+      : isPureLineNumberCell(cells[1])
+        ? cells[1]
+        : null;
+    if (!numberCell) continue;
+
+    const codeCell = numberCell === cells[0] ? cells[1] : cells[0];
+    const code = extractCodeCellText(codeCell);
+    if (code === null || !code.trim()) continue;
+
+    const document = table.ownerDocument;
+    const pre = document.createElement('pre');
+    const codeElement = document.createElement('code');
+    codeElement.textContent = code;
+    pre.appendChild(codeElement);
+    table.replaceWith(pre);
   }
 }
 
