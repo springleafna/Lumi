@@ -12,7 +12,7 @@ import UiButton from '../ui/Button.vue'
 import UiInput from '../ui/Input.vue'
 import UiTabs from '../ui/Tabs.vue'
 import { useMarkdownRenderer } from '../../composables/useMarkdownRenderer'
-import { formatVideoDuration } from '../../lib/video-anchor'
+import { formatVideoDuration, splitVideoAnchors } from '../../lib/video-anchor'
 
 type DrawerTab = 'ai' | 'annotations' | 'transcript'
 
@@ -52,6 +52,7 @@ const emit = defineEmits<{
   deleteAnnotation: [annotation: AnnotationDto]
   scrollToAnnotation: [id: string]
   seekTranscript: [seconds: number]
+  seek: [seconds: number]
 }>()
 
 // 视频文档没有批注：AI + 字幕（有字幕时）；文章文档：AI + 批注
@@ -203,14 +204,30 @@ function aiList(items?: string[] | null) {
         <p v-if="aiAnalysis.summary" class="ai-muted">{{ aiAnalysis.summary }}</p>
 
         <div v-if="aiList(aiAnalysis.keyPoints).length" class="ai-list-block">
-          <h4>关键要点</h4>
+          <h4>{{ isVideo ? '精华看点' : '关键要点' }}</h4>
           <ul>
-            <li v-for="item in aiList(aiAnalysis.keyPoints)" :key="item">{{ item }}</li>
+            <li v-for="item in aiList(aiAnalysis.keyPoints)" :key="item">
+              <template v-if="isVideo">
+                <template v-for="(part, index) in splitVideoAnchors(item)" :key="index">
+                  <button
+                    v-if="part.type === 'anchor'"
+                    class="ai-keypoint-anchor"
+                    type="button"
+                    :title="`跳转到视频 ${part.text}`"
+                    @click="emit('seek', part.seconds)"
+                  >
+                    {{ part.text }}
+                  </button>
+                  <template v-else>{{ part.text }}</template>
+                </template>
+              </template>
+              <template v-else>{{ item }}</template>
+            </li>
           </ul>
         </div>
 
         <div v-if="aiList(aiAnalysis.concepts).length" class="ai-list-block">
-          <h4>核心概念</h4>
+          <h4>{{ isVideo ? '提到的工具与概念' : '核心概念' }}</h4>
           <div class="article-detail-tags">
             <UiBadge v-for="item in aiList(aiAnalysis.concepts)" :key="item" variant="neutral">
               {{ item }}
@@ -218,14 +235,14 @@ function aiList(items?: string[] | null) {
           </div>
         </div>
 
-        <div v-if="aiList(aiAnalysis.actions).length" class="ai-list-block">
+        <div v-if="!isVideo && aiList(aiAnalysis.actions).length" class="ai-list-block">
           <h4>行动项</h4>
           <ul>
             <li v-for="item in aiList(aiAnalysis.actions)" :key="item">{{ item }}</li>
           </ul>
         </div>
 
-        <div v-if="aiAnalysis.audience" class="ai-list-block">
+        <div v-if="!isVideo && aiAnalysis.audience" class="ai-list-block">
           <h4>适合人群</h4>
           <p class="ai-muted">{{ aiAnalysis.audience }}</p>
         </div>

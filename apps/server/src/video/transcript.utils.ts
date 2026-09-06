@@ -135,6 +135,8 @@ function stripMarkup(line: string): string {
 /**
  * 按时间窗 / 字数把 segments 切成摘要分块（块边界落在句边界上）。
  * 默认约 8-10 分钟或 4000 字先到为准，60 分钟视频约切 5-6 块。
+ * 每句文本带 `[mm:ss]` 前缀：map 阶段的 LLM 只能从分块文本获知时间，
+ * 不带时间戳它会把所有锚点标成 [00:00]。
  */
 export function chunkTranscriptByWindow(
   segments: TranscriptSegment[],
@@ -142,23 +144,26 @@ export function chunkTranscriptByWindow(
   maxSpanSeconds = 600,
 ): TranscriptChunk[] {
   const chunks: TranscriptChunk[] = [];
-  let current: { startTime: number; endTime: number; lines: string[] } | null = null;
+  let current: { startTime: number; endTime: number; items: TranscriptSegment[] } | null = null;
+  let currentChars = 0;
 
   for (const segment of segments) {
     if (
       current &&
-      (current.lines.join('').length + segment.text.length > maxChars ||
+      (currentChars + segment.text.length > maxChars ||
         segment.end - current.startTime > maxSpanSeconds)
     ) {
       chunks.push(toChunk(current));
       current = null;
     }
     if (!current) {
-      current = { startTime: segment.start, endTime: segment.end, lines: [segment.text] };
+      current = { startTime: segment.start, endTime: segment.end, items: [segment] };
+      currentChars = segment.text.length;
       continue;
     }
-    current.lines.push(segment.text);
+    current.items.push(segment);
     current.endTime = segment.end;
+    currentChars += segment.text.length;
   }
   if (current) chunks.push(toChunk(current));
 
@@ -174,12 +179,12 @@ export type TranscriptChunk = {
 function toChunk(cue: {
   startTime: number;
   endTime: number;
-  lines: string[];
+  items: TranscriptSegment[];
 }): TranscriptChunk {
   return {
     startTime: cue.startTime,
     endTime: cue.endTime,
-    text: joinText('', ...cue.lines),
+    text: cue.items.map((item) => `[${formatTimestamp(item.start)}] ${item.text}`).join('\n'),
   };
 }
 

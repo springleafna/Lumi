@@ -66,7 +66,7 @@ export function buildVideoReduceMessages(input: VideoReducePromptInput): ChatMes
     {
       role: 'user',
       content: [
-        `请把下面视频的分块小结整理成一份结构化总结，只输出 JSON，字段：markdown, oneSentenceSummary, keyPoints, concepts, actions, tags。`,
+        `请把下面视频的分块小结整理成一份结构化总结，只输出 JSON，字段：markdown, oneSentenceSummary, keyPoints, concepts, tags。`,
         '',
         'markdown 字段是总结正文（Markdown 字符串），结构要求：',
         '1. 以一段 2-4 句的总述开头，不带任何标题；',
@@ -75,7 +75,7 @@ export function buildVideoReduceMessages(input: VideoReducePromptInput): ChatMes
         '4. 所有 [mm:ss] 必须直接取自分块小结中出现的时间点，严禁编造或推算；',
         '5. 全文控制在 1200 字以内，使用中文。',
         '',
-        '其余字段要求：oneSentenceSummary 为 60 字以内的一句话总结；keyPoints 为 3-8 条关键要点；concepts 为 0-8 个概念名词；actions 为 0-6 条可执行建议；tags 为 1-3 个 2-6 字的中文标签。全部使用中文。',
+        '其余字段要求：oneSentenceSummary 为 60 字以内的一句话总结；keyPoints 为 3-8 条关键要点，每条一句话、末尾必须附 `[mm:ss]`（时间取自分块小结，作为视频速览跳转点）；concepts 为 0-8 个视频中提到的工具、人物或概念名词；tags 为 1-3 个 2-6 字的中文标签。全部使用中文。',
         '',
         `视频标题：${input.title}`,
         `UP 主：${input.uploader || '未知'}`,

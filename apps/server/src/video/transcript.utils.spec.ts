@@ -145,11 +145,11 @@ describe('transcript.utils', () => {
       { start: 700, end: 710, text: '第三段。' },
     ];
 
-    it('时间超窗时切分', () => {
+    it('时间超窗时切分，且分块文本带每句时间戳', () => {
       const chunks = chunkTranscriptByWindow(segments, 10_000, 600);
       expect(chunks).toEqual([
-        { startTime: 0, endTime: 20, text: '第一段。第二段。' },
-        { startTime: 700, endTime: 710, text: '第三段。' },
+        { startTime: 0, endTime: 20, text: '[00:00] 第一段。\n[00:10] 第二段。' },
+        { startTime: 700, endTime: 710, text: '[11:40] 第三段。' },
       ]);
     });
 
@@ -160,8 +160,8 @@ describe('transcript.utils', () => {
       ];
       const chunks = chunkTranscriptByWindow(long, 40, 600);
       expect(chunks).toHaveLength(2);
-      expect(chunks[0].text).toHaveLength(30);
-      expect(chunks[1].text).toHaveLength(30);
+      expect(chunks[0].text).toBe(`[00:00] ${'a'.repeat(30)}`);
+      expect(chunks[1].text).toBe(`[00:05] ${'b'.repeat(30)}`);
     });
   });
 

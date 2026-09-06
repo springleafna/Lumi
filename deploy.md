@@ -77,6 +77,34 @@ server {
 
 在云服务商安全组中开放 **82 端口**。
 
+#### 1.4 安装 yt-dlp（视频导入依赖）
+
+视频导入使用 yt-dlp 获取元数据与字幕，M1 仅需字幕不需要 FFmpeg（M2 语音转写时再安装）。
+
+
+```bash
+# 1) 本地下载（GitHub Releases，无扩展名，浏览器提示保留时选保留）
+#    https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux
+
+# 2) 上传到服务器（目标名必须是 yt-dlp）
+scp D:\downloads\yt-dlp_linux root@<服务器IP>:/usr/local/bin/yt-dlp
+
+# 3) 服务器上加执行权限并验证
+chmod a+rx /usr/local/bin/yt-dlp
+yt-dlp --version
+```
+
+**版本更新**：
+
+```bash
+
+# 本地重新下载最新 yt-dlp_linux 后覆盖上传（scp 覆盖已保留执行权限）
+scp D:\downloads\yt-dlp_linux root@<服务器IP>:/usr/local/bin/yt-dlp
+```
+
+更新后无需重启服务——worker 每次任务都会重新调用 yt-dlp 二进制。B 站改版导致
+视频导入报「视频解析失败」时，先升级 yt-dlp 再对失败文章点重新解析。
+
 ---
 
 ### 2. 项目初始化部署

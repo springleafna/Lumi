@@ -316,8 +316,9 @@ export class AiService {
     const chunks = chunkTranscriptByWindow(segments);
     const chunkSummaries: VideoChunkSummary[] = [];
     for (const chunk of chunks) {
+      // map 阶段输出小结文本，不能用 chatJson（JSON 模式会压扁自由文本输出）
       const summary = (
-        await this.providerService.chatJson(
+        await this.providerService.chatText(
           buildVideoMapMessages({
             title: document.title,
             chunkText: chunk.text,
@@ -353,6 +354,8 @@ export class AiService {
       throw new BadRequestException('总结生成结果为空，请重试');
     }
 
+    // 阅读卡要点中的锚点与正文同规则校验（吸附/移除），保证抽屉跳转可信
+    payload.keyPoints = (payload.keyPoints ?? []).map((point) => normalizeAnchors(point, segments));
     return { payload, markdown };
   }
 

@@ -1129,6 +1129,7 @@ function getErrorMessage(error: unknown, fallback: string) {
       @delete-annotation="requestDeleteAnnotation"
       @scroll-to-annotation="scrollToAnnotation"
       @seek-transcript="seekVideo"
+      @seek="seekVideo"
     />
 
     <UiDialog

@@ -215,3 +215,23 @@
 .transcript-text {
   color: var(--fg-primary);
 }
+
+/* 视频阅读卡要点中的时间锚点（点击跳转播放） */
+.ai-keypoint-anchor {
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1);
+  color: var(--fg-tertiary);
+  background: var(--bg-muted);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    background 150ms cubic-bezier(0.2, 0, 0, 1),
+    color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ai-keypoint-anchor:hover {
+  color: var(--fg-primary);
+  background: var(--bg-tertiary);
+}

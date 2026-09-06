@@ -43,6 +43,35 @@ export function parseVideoAnchorSeconds(text: string): number | null {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
+export type VideoAnchorPart =
+  | { type: 'text'; text: string }
+  | { type: 'anchor'; text: string; seconds: number };
+
+/** 把含 [mm:ss] 的文本拆成纯文本段与可点击锚点段（抽屉要点渲染用） */
+export function splitVideoAnchors(text: string): VideoAnchorPart[] {
+  const parts: VideoAnchorPart[] = [];
+  let cursor = 0;
+  VIDEO_ANCHOR_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = VIDEO_ANCHOR_PATTERN.exec(text)) !== null) {
+    if (match.index > cursor) {
+      parts.push({ type: 'text', text: text.slice(cursor, match.index) });
+    }
+    parts.push({
+      type: 'anchor',
+      text: match[0],
+      seconds: Number(match[1]) * 60 + Number(match[2]),
+    });
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < text.length) {
+    parts.push({ type: 'text', text: text.slice(cursor) });
+  }
+
+  return parts.length ? parts : [{ type: 'text', text }];
+}
+
 /**
  * 扫描正文文本节点，把 [mm:ss] 包裹成可点击按钮（保留原始展示文本）。
  * 代码块内不处理；重复调用安全（已是按钮的文本不会再匹配）。

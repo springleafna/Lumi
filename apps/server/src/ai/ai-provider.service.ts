@@ -28,10 +28,25 @@ export class AiProviderService {
     return this.chatJsonWithConfig(config, messages, temperature);
   }
 
+  /** 纯文本生成：与 chatJson 的区别是不强制 response_format JSON 模式 */
+  async chatText(messages: ChatMessage[], temperature = 0.2): Promise<string> {
+    const config = await this.getChatConfig();
+    return this.chatWithConfig(config, messages, temperature, false);
+  }
+
   async chatJsonWithConfig(
     config: RuntimeAiConfig,
     messages: ChatMessage[],
     temperature = 0.2,
+  ): Promise<string> {
+    return this.chatWithConfig(config, messages, temperature, true);
+  }
+
+  private async chatWithConfig(
+    config: RuntimeAiConfig,
+    messages: ChatMessage[],
+    temperature: number,
+    jsonMode: boolean,
   ): Promise<string> {
     const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
@@ -43,7 +58,7 @@ export class AiProviderService {
         model: config.model,
         messages,
         temperature,
-        response_format: { type: 'json_object' },
+        ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
       }),
     });
 
