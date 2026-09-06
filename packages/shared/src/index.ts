@@ -59,6 +59,8 @@ export type DocumentSummary = {
   author?: string | null;
   excerpt?: string | null;
   coverImage?: string | null;
+  videoPlatform?: string | null;
+  videoDurationSeconds?: number | null;
   wordCount?: number | null;
   ingestStatus: DocumentIngestStatus;
   ingestErrorMessage?: string | null;
@@ -82,8 +84,25 @@ export type DocumentDetail = DocumentSummary & {
   aiAnalysis?: AiAnalysisDto | null;
 };
 
+export type TranscriptSegmentDto = {
+  /** 起始时间（秒，浮点） */
+  start: number;
+  /** 结束时间（秒，浮点） */
+  end: number;
+  text: string;
+};
+
+export type VideoTranscriptDto = {
+  documentId: string;
+  /** 字幕来源：bilibili-cc / bilibili-ai（M2 增加 asr-*） */
+  provider: string;
+  language: string;
+  segments: TranscriptSegmentDto[];
+  fetchedAt: string;
+};
+
 export type IngestJobStatus = 'pending' | 'processing' | 'succeeded' | 'failed';
-export type IngestJobType = 'url' | 'html' | 'selection' | 'file';
+export type IngestJobType = 'url' | 'html' | 'selection' | 'file' | 'video';
 
 export type IngestJobDto = {
   id: string;

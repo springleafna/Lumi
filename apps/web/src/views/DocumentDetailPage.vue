@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Bot,
   CalendarDays,
+  Captions,
   ExternalLink,
   Highlighter,
   LoaderCircle,
@@ -21,6 +22,7 @@ import type {
   AnnotationDto,
   DocumentDetail,
   DocumentType,
+  VideoTranscriptDto,
 } from '@lumi/shared'
 import UiBadge from '../components/ui/Badge.vue'
 import UiButton from '../components/ui/Button.vue'
@@ -31,6 +33,7 @@ import AiDrawer from '../components/document-detail/AiDrawer.vue'
 import AnnotationLayer from '../components/document-detail/AnnotationLayer.vue'
 import ArticleToc from '../components/document-detail/ArticleToc.vue'
 import TagEditor from '../components/document-detail/TagEditor.vue'
+import VideoHeaderCard from '../components/document-detail/VideoHeaderCard.vue'
 import { useToast } from '../composables/useToast'
 import { useMarkdownRenderer } from '../composables/useMarkdownRenderer'
 import { useRuntimeToc } from '../composables/useRuntimeToc'
@@ -42,6 +45,7 @@ import {
 } from '../lib/highlight-dom'
 import lumiLogo from '../assets/lumi-logo.svg'
 import { client } from '../lib/client'
+import { parseVideoAnchorSeconds, wrapVideoAnchors } from '../lib/video-anchor'
 
 type ConfirmDialogState = {
   title: string
@@ -50,7 +54,7 @@ type ConfirmDialogState = {
   run: () => Promise<void>
 }
 
-type DrawerTab = 'ai' | 'annotations'
+type DrawerTab = 'ai' | 'annotations' | 'transcript'
 
 // 即时问答：仅保留当前一轮，不读取历史
 type AiExchange = {
@@ -118,6 +122,15 @@ const annotationNote = ref('')
 const editingAnnotation = ref<AnnotationDto | null>(null)
 const activeAnnotationId = ref<string | null>(null)
 
+// 视频阅读：transcript 供字幕面板使用，头卡播放器通过模板 ref 接收 seek
+const transcript = ref<VideoTranscriptDto | null>(null)
+const videoCardRef = ref<InstanceType<typeof VideoHeaderCard> | null>(null)
+const isVideoDocument = computed(() => document.value?.type === 'video')
+
+function seekVideo(seconds: number) {
+  videoCardRef.value?.seekTo(seconds)
+}
+
 let pollingTimer: number | undefined
 
 const sortedAnnotations = computed(() =>
@@ -145,7 +158,10 @@ const isIngestPending = computed(
 const isIngestFailed = computed(() => document.value?.ingestStatus === 'failed')
 const isIngestSucceeded = computed(() => document.value?.ingestStatus === 'succeeded')
 const canEditReadingMarkers = computed(() => Boolean(document.value && !isTrash.value))
-const canEditAnnotations = computed(() => Boolean(document.value && isIngestSucceeded.value && !isTrash.value))
+// 视频文档不支持划词批注（锚定机制基于正文字符偏移，方案文档 M1 非目标）
+const canEditAnnotations = computed(
+  () => Boolean(document.value && isIngestSucceeded.value && !isTrash.value && !isVideoDocument.value),
+)
 const aiAnalysis = computed(() => document.value?.aiAnalysis || null)
 const shouldPollDocument = computed(
   () =>
@@ -276,6 +292,7 @@ async function loadDocument(options: { silent?: boolean } = {}) {
     await markAsReadingIfNeeded(loaded)
     if (document.value?.ingestStatus === 'succeeded') {
       await loadAnnotations({ silent: true })
+      await loadTranscriptIfNeeded(loaded)
     }
     await nextTick()
     refreshRuntimeToc()
@@ -289,8 +306,21 @@ async function loadDocument(options: { silent?: boolean } = {}) {
   }
 }
 
-async function markAsReadingIfNeeded(current: DocumentDetail) {
-  if (
+// 字幕随所属文档缓存；切换文档或非视频文档时清空，失败静默置空
+async function loadTranscriptIfNeeded(current: DocumentDetail) {
+  if (current.type !== 'video') {
+    transcript.value = null
+    return
+  }
+  if (transcript.value?.documentId === current.id) return
+  try {
+    transcript.value = await client.documents.getTranscript(current.id)
+  } catch {
+    transcript.value = null
+  }
+}
+
+async function markAsReadingIfNeeded(current: DocumentDetail) {  if (
     current.ingestStatus !== 'succeeded' ||
     current.deletedAt ||
     current.readingStatus !== 'unread'
@@ -541,6 +571,12 @@ function handleTextSelection() {
 
 function handleArticleClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null
+  const seekButton = target?.closest<HTMLElement>('[data-video-seek]')
+  if (seekButton) {
+    const seconds = Number(seekButton.dataset.videoSeek)
+    if (Number.isFinite(seconds)) seekVideo(seconds)
+    return
+  }
   const marker = target?.closest<HTMLElement>('[data-annotation-id]')
   if (!marker) return
   const annotation = annotations.value.find((item) => item.id === marker.dataset.annotationId)
@@ -708,6 +744,16 @@ function scrollToCitationRange() {
 
 function refreshRuntimeToc() {
   refreshToc(articleContentRef.value, isIngestSucceeded.value)
+  // TOC 提取后再包裹 [mm:ss] 锚点（幂等，已包裹的节点会被跳过）
+  wrapVideoAnchors(articleContentRef.value)
+}
+
+// 章节点击 = 滚动正文 + 播放器 seek 到章节时间
+async function handleTocNavigate(id: string) {
+  await scrollToHeading(id)
+  const heading = globalThis.document.getElementById(id)
+  const seconds = parseVideoAnchorSeconds(heading?.textContent || '')
+  if (seconds !== null) seekVideo(seconds)
 }
 
 async function runDetailAction(action: () => Promise<void>, fallback: string) {
@@ -877,9 +923,23 @@ function getErrorMessage(error: unknown, fallback: string) {
             <Star :size="15" :class="{ 'is-filled-icon': document.favoritedAt }" />
             {{ document.favoritedAt ? '已收藏' : '收藏' }}
           </UiButton>
-          <UiButton variant="secondary" @click="openDrawer('annotations')">
+          <UiButton
+            v-if="!isVideoDocument"
+            variant="secondary"
+            @click="openDrawer('annotations')"
+          >
             <Highlighter :size="15" />
             批注
+          </UiButton>
+          <UiButton
+            v-else
+            variant="secondary"
+            :disabled="!transcript?.segments.length"
+            title="查看视频字幕"
+            @click="openDrawer('transcript')"
+          >
+            <Captions :size="15" />
+            字幕
           </UiButton>
           <UiButton variant="secondary" @click="openDrawer('ai')">
             <Bot :size="15" />
@@ -973,6 +1033,15 @@ function getErrorMessage(error: unknown, fallback: string) {
               </div>
             </header>
 
+            <VideoHeaderCard
+              v-if="isVideoDocument"
+              ref="videoCardRef"
+              :url="document.url || ''"
+              :cover-image="document.coverImage"
+              :duration-seconds="document.videoDurationSeconds"
+              :source="document.source"
+            />
+
             <UiEmptyState
               v-if="isIngestPending"
               title="文章正在解析"
@@ -1014,7 +1083,7 @@ function getErrorMessage(error: unknown, fallback: string) {
             v-if="isIngestSucceeded"
             :items="tocItems"
             :active-id="activeTocId"
-            @navigate="scrollToHeading"
+            @navigate="handleTocNavigate"
           />
         </div>
       </main>
@@ -1037,6 +1106,7 @@ function getErrorMessage(error: unknown, fallback: string) {
       v-if="document"
       :open="drawerOpen"
       :tab="drawerTab"
+      :is-video="isVideoDocument"
       :ingest-succeeded="isIngestSucceeded"
       :is-trash="isTrash"
       :can-edit-annotations="canEditAnnotations"
@@ -1049,6 +1119,7 @@ function getErrorMessage(error: unknown, fallback: string) {
       :annotations-loading="annotationsLoading"
       :annotation-action-loading="annotationActionLoading"
       :active-annotation-id="activeAnnotationId"
+      :transcript="transcript"
       @update:open="drawerOpen = $event"
       @update:tab="(value) => openDrawer(value)"
       @update:ai-question="aiQuestion = $event"
@@ -1057,6 +1128,7 @@ function getErrorMessage(error: unknown, fallback: string) {
       @edit-annotation="openEditAnnotationDialog"
       @delete-annotation="requestDeleteAnnotation"
       @scroll-to-annotation="scrollToAnnotation"
+      @seek-transcript="seekVideo"
     />
 
     <UiDialog

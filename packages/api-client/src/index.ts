@@ -18,6 +18,7 @@ import type {
   IngestFileResponse,
   IngestHtmlRequest,
   IngestHtmlResponse,
+  VideoTranscriptDto,
   IngestSelectionRequest,
   IngestSelectionResponse,
   IngestUrlRequest,
@@ -194,6 +195,8 @@ export function createLumiClient(options: LumiClientOptions) {
         }),
       facets: () => request<DocumentFacets>(http, 'get', '/documents/facets'),
       get: (id: string) => request<DocumentDetail>(http, 'get', `/documents/${id}`),
+      getTranscript: (id: string) =>
+        request<VideoTranscriptDto>(http, 'get', `/documents/${id}/transcript`),
       delete: (id: string) => request<{ id: string }>(http, 'delete', `/documents/${id}`),
       archive: (id: string) =>
         request<DocumentDetail>(http, 'patch', `/documents/${id}/archive`),

@@ -152,3 +152,23 @@
 .article-toc-link.level-3 {
   padding-left: var(--space-6);
 }
+
+/* 正文 [mm:ss] 视频时间锚点（v-html 注入，样式必须全局） */
+.markdown-reader .video-anchor {
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1);
+  color: var(--fg-tertiary);
+  background: var(--bg-muted);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    background 150ms cubic-bezier(0.2, 0, 0, 1),
+    color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.markdown-reader .video-anchor:hover {
+  color: var(--fg-primary);
+  background: var(--bg-tertiary);
+}

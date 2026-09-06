@@ -25,6 +25,13 @@ import {
   validateHtml,
 } from './ingest.validation';
 import { getErrorMessage } from '../common/error.utils';
+import {
+  canonicalBilibiliVideoUrl,
+  detectBilibiliVideo,
+  expandBilibiliShortLink,
+  isBilibiliShortLink,
+  type BilibiliVideoRef,
+} from './bilibili.utils';
 
 export type UploadedTextFile = {
   originalname: string;
@@ -54,10 +61,22 @@ export class IngestService {
     input: IngestUrlRequest,
   ): Promise<IngestUrlResponse> {
     const url = normalizeUrl(input.url);
+    const { video, effectiveUrl } = await this.resolveImportTarget(url);
+
+    if (video) {
+      return this.createQueuedIngest({
+        userId,
+        url: canonicalBilibiliVideoUrl(video),
+        jobType: 'video',
+        documentType: 'video',
+      });
+    }
+
     return this.createQueuedIngest({
       userId,
-      url,
-      type: 'url',
+      url: effectiveUrl,
+      jobType: 'url',
+      documentType: 'article',
     });
   }
 
@@ -71,7 +90,8 @@ export class IngestService {
     return this.createQueuedIngest({
       userId,
       url,
-      type: 'html',
+      jobType: 'html',
+      documentType: 'article',
       title: input.title?.trim(),
       html,
     });
@@ -237,9 +257,12 @@ export class IngestService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    // 视频没有可复用的 HTML 快照，失败后仍走 ingest:video 重新解析
     const canReuseHtml =
-      latestFailedJob?.type === 'html' && Boolean(latestFailedJob.inputHtml);
-    const jobType = canReuseHtml ? 'html' : 'url';
+      document.type !== 'video' &&
+      latestFailedJob?.type === 'html' &&
+      Boolean(latestFailedJob.inputHtml);
+    const jobType = document.type === 'video' ? 'video' : canReuseHtml ? 'html' : 'url';
     const job = await this.prisma.ingestJob.create({
       data: {
         userId,
@@ -262,7 +285,7 @@ export class IngestService {
     });
 
     await this.queueService.addIngestJob(
-      jobType === 'html' ? 'ingest:html' : 'ingest:url',
+      jobType === 'video' ? 'ingest:video' : jobType === 'html' ? 'ingest:html' : 'ingest:url',
       { jobId: job.id },
     );
 
@@ -272,10 +295,28 @@ export class IngestService {
     };
   }
 
+  /**
+   * 判断导入目标是否为 B 站视频。短链（b23.tv）先同步展开为最终地址：
+   * 指向视频页时进入视频管线，指向其他内容（如专栏）时按文章导入展开后的
+   * 真实地址；展开失败直接报错。
+   */
+  private async resolveImportTarget(url: string): Promise<{
+    video: BilibiliVideoRef | null;
+    effectiveUrl: string;
+  }> {
+    if (!isBilibiliShortLink(url)) {
+      return { video: detectBilibiliVideo(url), effectiveUrl: url };
+    }
+
+    const expanded = await expandBilibiliShortLink(url);
+    return { video: detectBilibiliVideo(expanded), effectiveUrl: expanded };
+  }
+
   private async createQueuedIngest(input: {
     userId: string;
     url: string;
-    type: 'url' | 'html';
+    jobType: 'url' | 'html' | 'video';
+    documentType: 'article' | 'video';
     title?: string;
     html?: string;
   }): Promise<IngestUrlResponse> {
@@ -283,7 +324,7 @@ export class IngestService {
       where: {
         userId: input.userId,
         url: input.url,
-        type: 'article',
+        type: input.documentType,
       },
       include: documentIncludeForIngest,
     });
@@ -294,7 +335,7 @@ export class IngestService {
           userId: input.userId,
           inputUrl: input.url,
           inputTitle: input.title,
-          type: input.type,
+          type: input.jobType,
           status: 'succeeded',
           documentId: existing.id,
           finishedAt: new Date(),
@@ -321,7 +362,7 @@ export class IngestService {
       : await this.prisma.document.create({
           data: {
             userId: input.userId,
-            type: 'article',
+            type: input.documentType,
             title: input.title || input.url,
             url: input.url,
             markdown: '',
@@ -336,13 +377,19 @@ export class IngestService {
         inputUrl: input.url,
         inputTitle: input.title,
         inputHtml: input.html,
-        type: input.type,
+        type: input.jobType,
         status: 'pending',
         documentId: document.id,
       },
     });
 
-    await this.queueService.addIngestJob(input.type === 'html' ? 'ingest:html' : 'ingest:url', {
+    const jobName =
+      input.jobType === 'video'
+        ? 'ingest:video'
+        : input.jobType === 'html'
+          ? 'ingest:html'
+          : 'ingest:url';
+    await this.queueService.addIngestJob(jobName, {
       jobId: job.id,
     });
 

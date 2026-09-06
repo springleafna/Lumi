@@ -20,6 +20,7 @@ import type {
 import { validateHtml } from '../ingest/ingest.validation';
 import { getErrorMessage } from '../common/error.utils';
 import { parseDate } from '../common/date.utils';
+import { VideoIngestProcessor } from './video-ingest.processor';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -48,6 +49,7 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly aiProviderService: AiProviderService,
     private readonly embeddingsService: EmbeddingsService,
     private readonly mediaArchiveService: MediaArchiveService,
+    private readonly videoIngestProcessor: VideoIngestProcessor,
     @Inject(REDIS_CONNECTION_OPTIONS)
     private readonly connection: RedisOptions,
   ) {}
@@ -75,6 +77,11 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private async process(job: Job<IngestQueueJobData, unknown, IngestQueueJobName>) {
+    // 视频导入走独立管线（yt-dlp 元数据 + 字幕）
+    if (job.name === 'ingest:video') {
+      return this.videoIngestProcessor.process(job);
+    }
+
     // 先读取占位文档与任务输入；缺少必要信息直接失败，避免无意义的抓取。
     const ingestJob = await this.prisma.ingestJob.findUnique({
       where: { id: job.data.jobId },

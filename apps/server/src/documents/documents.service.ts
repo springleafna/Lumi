@@ -12,6 +12,7 @@ import type {
   ListDocumentsParams,
   PageResult,
   UpdateAnnotationRequest,
+  VideoTranscriptDto,
 } from '@lumi/shared';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { MediaArchiveService } from '../media/media-archive.service';
@@ -130,6 +131,24 @@ export class DocumentsService {
   async get(userId: string, id: string) {
     const document = await this.findOwnedDocument(userId, id);
     return this.toDocumentDetailWithEmbeddingStatus(userId, document);
+  }
+
+  async getTranscript(userId: string, id: string): Promise<VideoTranscriptDto> {
+    await this.ensureOwnedDocument(userId, id);
+    const transcript = await this.prisma.videoTranscript.findUnique({
+      where: { documentId: id },
+    });
+    if (!transcript) {
+      throw new NotFoundException('该文档没有字幕记录');
+    }
+
+    return {
+      documentId: transcript.documentId,
+      provider: transcript.provider,
+      language: transcript.language,
+      segments: transcript.segments as VideoTranscriptDto['segments'],
+      fetchedAt: transcript.fetchedAt.toISOString(),
+    };
   }
 
   async archive(userId: string, id: string) {

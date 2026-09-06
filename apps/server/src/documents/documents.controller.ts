@@ -72,6 +72,11 @@ export class DocumentsController {
     return this.documentsService.get(user.id, id);
   }
 
+  @Get(':id/transcript')
+  getTranscript(@CurrentUser() user: UserDto, @Param('id') id: string) {
+    return this.documentsService.getTranscript(user.id, id);
+  }
+
   @Patch(':id/archive')
   archive(@CurrentUser() user: UserDto, @Param('id') id: string) {
     return this.documentsService.archive(user.id, id);

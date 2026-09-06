@@ -17,13 +17,14 @@ Lumi 是一个个人知识管理应用，用于收集、解析、保存、整理
 
 ```powershell
 pnpm install
-pnpm dev:all   # 同时启动 web + server + worker
-pnpm dev:server / dev:worker / dev:web / dev:extension
-pnpm build:web / build:server / build:extension
+pnpm dev:all   # 同时启动 web + server + worker（不含 mobile）
+pnpm dev:server / dev:worker / dev:web / dev:extension / dev:mobile
+pnpm build:web / build:server / build:extension / build:mobile
 pnpm db:generate / db:migrate / db:init-user
 ```
 
 - 根目录脚本会自动先执行 `build:packages`（shared/parser/storage/api-client 构建到 `dist/`）。
+- `dev:all` 不含移动端；调试 mobile 需单独开终端跑 `pnpm dev:mobile`（端口 `5175`）。
 - 改动后按范围跑聚焦构建：`pnpm build:web` / `build:server` / `build:extension` / `build:mobile`。
 - PostgreSQL 不可用时，`db:migrate` 和 `db:init-user` 按设计直接失败。
 

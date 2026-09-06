@@ -5,9 +5,12 @@ import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { MediaModule } from '../media/media.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { QueueModule } from '../queue/queue.module';
+import { BilibiliService } from '../video/bilibili.service';
+import { YtDlpService } from '../video/ytdlp.service';
 import { AiAnalysisProcessor } from './ai-analysis.processor';
 import { EmbeddingProcessor } from './embedding.processor';
 import { IngestProcessor } from './ingest.processor';
+import { VideoIngestProcessor } from './video-ingest.processor';
 
 @Module({
   imports: [
@@ -21,6 +24,13 @@ import { IngestProcessor } from './ingest.processor';
     EmbeddingsModule,
     MediaModule,
   ],
-  providers: [IngestProcessor, AiAnalysisProcessor, EmbeddingProcessor],
+  providers: [
+    IngestProcessor,
+    VideoIngestProcessor,
+    AiAnalysisProcessor,
+    EmbeddingProcessor,
+    YtDlpService,
+    BilibiliService,
+  ],
 })
 export class WorkerModule {}

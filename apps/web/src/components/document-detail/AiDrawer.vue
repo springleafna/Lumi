@@ -5,14 +5,16 @@ import { MessageSquare, PencilLine, RefreshCw, Trash2, X } from 'lucide-vue-next
 import type {
   AiAnalysisDto,
   AnnotationDto,
+  VideoTranscriptDto,
 } from '@lumi/shared'
 import UiBadge from '../ui/Badge.vue'
 import UiButton from '../ui/Button.vue'
 import UiInput from '../ui/Input.vue'
 import UiTabs from '../ui/Tabs.vue'
 import { useMarkdownRenderer } from '../../composables/useMarkdownRenderer'
+import { formatVideoDuration } from '../../lib/video-anchor'
 
-type DrawerTab = 'ai' | 'annotations'
+type DrawerTab = 'ai' | 'annotations' | 'transcript'
 
 type AiExchange = {
   question: string
@@ -24,6 +26,7 @@ type AiExchange = {
 const props = defineProps<{
   open: boolean
   tab: DrawerTab
+  isVideo: boolean
   ingestSucceeded: boolean
   isTrash: boolean
   canEditAnnotations: boolean
@@ -36,6 +39,7 @@ const props = defineProps<{
   annotationsLoading: boolean
   annotationActionLoading: string
   activeAnnotationId: string | null
+  transcript: VideoTranscriptDto | null
 }>()
 
 const emit = defineEmits<{
@@ -47,12 +51,32 @@ const emit = defineEmits<{
   editAnnotation: [annotation: AnnotationDto]
   deleteAnnotation: [annotation: AnnotationDto]
   scrollToAnnotation: [id: string]
+  seekTranscript: [seconds: number]
 }>()
 
-const drawerTabs = [
-  { value: 'ai', label: 'AI' },
-  { value: 'annotations', label: '批注' },
-]
+// 视频文档没有批注：AI + 字幕（有字幕时）；文章文档：AI + 批注
+const drawerTabs = computed(() => {
+  if (props.isVideo) {
+    return props.transcript?.segments.length
+      ? [
+          { value: 'ai', label: 'AI' },
+          { value: 'transcript', label: '字幕' },
+        ]
+      : [{ value: 'ai', label: 'AI' }];
+  }
+  return [
+    { value: 'ai', label: 'AI' },
+    { value: 'annotations', label: '批注' },
+  ];
+})
+
+const transcriptFilter = ref('')
+const filteredTranscriptSegments = computed(() => {
+  const keyword = transcriptFilter.value.trim()
+  const segments = props.transcript?.segments ?? []
+  if (!keyword) return segments
+  return segments.filter((segment) => segment.text.includes(keyword))
+})
 
 const sortedAnnotations = computed(() =>
   [...props.annotations].sort((a, b) => {
@@ -226,6 +250,33 @@ function aiList(items?: string[] | null) {
           ></div>
           <p v-else class="ai-answer">{{ aiExchange.streaming ? '正在生成...' : '暂无回答' }}</p>
           <p v-if="aiExchange.failed" class="ai-muted">回答生成失败，可以重新提问。</p>
+        </div>
+      </section>
+    </div>
+
+    <div v-else-if="tab === 'transcript'" class="ai-drawer-body">
+      <section class="ai-section transcript-section">
+        <div class="ai-section-header">
+          <h3>视频字幕</h3>
+          <UiBadge variant="neutral">{{ filteredTranscriptSegments.length }}</UiBadge>
+        </div>
+        <UiInput
+          v-model="transcriptFilter"
+          class="transcript-filter"
+          placeholder="搜索字幕内容..."
+        />
+        <p v-if="!filteredTranscriptSegments.length" class="ai-muted">没有匹配的字幕内容。</p>
+        <div v-else class="transcript-list">
+          <button
+            v-for="item in filteredTranscriptSegments"
+            :key="item.start"
+            class="transcript-item"
+            type="button"
+            @click="emit('seekTranscript', item.start)"
+          >
+            <span class="transcript-time">{{ formatVideoDuration(item.start) }}</span>
+            <span class="transcript-text">{{ item.text }}</span>
+          </button>
         </div>
       </section>
     </div>

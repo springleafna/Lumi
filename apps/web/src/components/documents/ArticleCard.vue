@@ -13,6 +13,7 @@ import type { DocumentStatus, DocumentSummary, DocumentType } from '@lumi/shared
 import UiBadge from '../ui/Badge.vue'
 import UiButton from '../ui/Button.vue'
 import UiCard from '../ui/Card.vue'
+import { formatVideoDuration } from '../../lib/video-anchor'
 
 const props = defineProps<{
   document: DocumentSummary
@@ -80,9 +81,18 @@ function shouldShowDocumentStatus(document: DocumentSummary) {
   return Boolean(document.deletedAt || document.archivedAt || document.ingestStatus !== 'succeeded')
 }
 
+const hasVideoCover = computed(
+  () => props.document.type === 'video' && Boolean(props.document.coverImage),
+)
+
 function documentExcerpt(document: DocumentSummary) {
-  if (document.ingestStatus === 'pending') return '文章已进入导入队列，正在等待解析。'
-  if (document.ingestStatus === 'processing') return '正在提取正文并转换为 Markdown。'
+  const isVideo = document.type === 'video'
+  if (document.ingestStatus === 'pending') {
+    return isVideo ? '视频已进入导入队列，正在等待解析。' : '文章已进入导入队列，正在等待解析。'
+  }
+  if (document.ingestStatus === 'processing') {
+    return isVideo ? '正在获取字幕并生成视频总结。' : '正在提取正文并转换为 Markdown。'
+  }
   if (document.ingestStatus === 'failed') {
     return document.ingestErrorMessage || '解析失败，可以稍后重试。'
   }
@@ -199,11 +209,31 @@ function hasHiddenDocumentTags(document: DocumentSummary) {
       </div>
 
       <button class="article-card-body" type="button" @click="emit('open', document)">
-        <p class="article-card-excerpt">{{ documentExcerpt(document) }}</p>
+        <div v-if="hasVideoCover" class="article-card-media-row">
+          <div class="article-card-cover">
+            <img
+              :src="document.coverImage || undefined"
+              alt=""
+              loading="lazy"
+              referrerpolicy="no-referrer"
+            />
+            <span v-if="document.videoDurationSeconds" class="article-card-cover-duration">
+              {{ formatVideoDuration(document.videoDurationSeconds) }}
+            </span>
+          </div>
+          <p class="article-card-excerpt">{{ documentExcerpt(document) }}</p>
+        </div>
+        <p v-else class="article-card-excerpt">{{ documentExcerpt(document) }}</p>
         <div class="article-card-footer">
           <div class="article-card-meta">
             <span class="article-card-meta-item">{{ document.source || '未知来源' }}</span>
             <span class="article-card-meta-item">{{ formatDate(document.createdAt) }}</span>
+            <span
+              v-if="document.videoDurationSeconds && !hasVideoCover"
+              class="article-card-meta-item"
+            >
+              {{ formatVideoDuration(document.videoDurationSeconds) }}
+            </span>
             <span v-if="document.wordCount" class="article-card-meta-item">
               {{ document.wordCount }} 字
             </span>

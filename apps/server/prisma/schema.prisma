@@ -36,6 +36,8 @@ model Document {
   author             String?
   excerpt            String?
   coverImage         String?
+  videoPlatform      String?
+  videoDurationSeconds Int?
   markdown           String
   contentText        String?
   wordCount          Int?
@@ -60,9 +62,22 @@ model Document {
   embeddingJobs   DocumentEmbeddingJob[]
   embeddingChunks DocumentEmbeddingChunk[]
   knowledgeChatCitations KnowledgeChatCitation[]
+  videoTranscript VideoTranscript?
 
   @@index([userId, ingestStatus])
   @@index([userId, url])
+}
+
+model VideoTranscript {
+  id         String   @id @default(cuid())
+  documentId String   @unique
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  provider   String
+  language   String
+  segments   Json
+  fetchedAt  DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model Tag {
@@ -373,6 +388,7 @@ enum IngestJobType {
   html
   selection
   file
+  video
 }
 
 enum IngestJobStatus {

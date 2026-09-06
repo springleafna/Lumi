@@ -9,6 +9,8 @@ logs
 .zcode
 .tmp-repro
 pnpm-lock.yaml.tmp
+
+secrets/
 apps/server/src/generated/prisma
 
 # Capacitor android build artifacts

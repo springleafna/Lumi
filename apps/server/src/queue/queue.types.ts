@@ -1,4 +1,4 @@
-export type IngestQueueJobName = 'ingest:url' | 'ingest:html';
+export type IngestQueueJobName = 'ingest:url' | 'ingest:html' | 'ingest:video';
 
 export type IngestQueueJobData = {
   jobId: string;

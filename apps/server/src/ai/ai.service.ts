@@ -4,6 +4,18 @@ import type { CreateAiConversationRequest } from '@lumi/shared';
 import { AiProviderService } from './ai-provider.service';
 import { buildAnalysisMessages } from './prompts/analysis';
 import { buildDocumentQuestionMessages } from './prompts/document-question';
+import {
+  buildVideoMapMessages,
+  buildVideoReduceMessages,
+  type VideoChunkSummary,
+} from './prompts/video-summary';
+import {
+  chunkTranscriptByWindow,
+  formatTranscriptForPrompt,
+  normalizeAnchors,
+  type TranscriptSegment,
+} from '../video/transcript.utils';
+import { countTextWords } from '../common/text.utils';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
 import {
@@ -21,6 +33,8 @@ type AnalysisPayload = {
   actions?: string[];
   audience?: string;
   tags?: string[];
+  /** 视频总结专用：正文 Markdown（文章分析不使用） */
+  markdown?: string;
 };
 
 @Injectable()
@@ -91,35 +105,57 @@ export class AiService {
     });
 
     try {
-      const content = await this.providerService.chatJson(
-        buildAnalysisMessages({
-          title: document.title,
-          source: document.source,
-          author: document.author,
-          excerpt: document.excerpt,
-          contentText: document.contentText || document.markdown,
-        }),
-      );
-      const payload = normalizeAnalysisPayload(content);
+      let payload: AnalysisPayload;
+      let markdown: string | null = null;
+      if (document.type === 'video') {
+        const video = await this.summarizeVideoDocument(document);
+        payload = video.payload;
+        markdown = video.markdown;
+      } else {
+        const content = await this.providerService.chatJson(
+          buildAnalysisMessages({
+            title: document.title,
+            source: document.source,
+            author: document.author,
+            excerpt: document.excerpt,
+            contentText: document.contentText || document.markdown,
+          }),
+        );
+        payload = normalizeAnalysisPayload(content);
+      }
       const tags = normalizeTags(payload.tags);
 
-      const analysis = await this.prisma.aiAnalysis.update({
-        where: { documentId },
-        data: {
-          status: 'succeeded',
-          provider: provider.providerPreset,
-          model: provider.model,
-          language: 'zh-CN',
-          oneSentenceSummary: payload.oneSentenceSummary || null,
-          summary: payload.summary || null,
-          keyPoints: normalizeStringArray(payload.keyPoints),
-          concepts: normalizeStringArray(payload.concepts),
-          actions: normalizeStringArray(payload.actions),
-          audience: payload.audience || null,
-          suggestedTags: tags,
-          errorMessage: null,
-          finishedAt: new Date(),
-        },
+      const analysis = await this.prisma.$transaction(async (tx) => {
+        // 视频总结的正文在这里才落库（ingest 阶段 markdown 为空）；
+        // 一句话摘要同时回写 excerpt，供列表卡片展示
+        if (markdown !== null) {
+          await tx.document.update({
+            where: { id: documentId },
+            data: {
+              markdown,
+              wordCount: countTextWords(markdown),
+              excerpt: payload.oneSentenceSummary || null,
+            },
+          });
+        }
+        return tx.aiAnalysis.update({
+          where: { documentId },
+          data: {
+            status: 'succeeded',
+            provider: provider.providerPreset,
+            model: provider.model,
+            language: 'zh-CN',
+            oneSentenceSummary: payload.oneSentenceSummary || null,
+            summary: payload.summary || null,
+            keyPoints: normalizeStringArray(payload.keyPoints),
+            concepts: normalizeStringArray(payload.concepts),
+            actions: normalizeStringArray(payload.actions),
+            audience: payload.audience || null,
+            suggestedTags: tags,
+            errorMessage: null,
+            finishedAt: new Date(),
+          },
+        });
       });
 
       await this.attachTags(userId, documentId, tags);
@@ -191,11 +227,28 @@ export class AiService {
       const analysis = await this.prisma.aiAnalysis.findUnique({
         where: { documentId },
       });
+      let articleText = document.contentText || document.markdown || '';
+      if (document.type === 'video') {
+        // 视频问答：总结 + 全量字幕进上下文（方案文档 §9.4，不做检索）
+        const transcript = await this.prisma.videoTranscript.findUnique({
+          where: { documentId },
+        });
+        const segments = (transcript?.segments as TranscriptSegment[] | null) ?? [];
+        if (segments.length) {
+          articleText = [
+            document.markdown || '',
+            '视频字幕全文：',
+            formatTranscriptForPrompt(segments),
+          ]
+            .filter(Boolean)
+            .join('\n\n');
+        }
+      }
       for await (const chunk of this.providerService.streamChat(
         buildDocumentQuestionMessages({
           title: document.title,
           question,
-          articleText: document.contentText || document.markdown || '',
+          articleText,
           analysisSummary: analysis?.summary || analysis?.oneSentenceSummary || undefined,
         }),
       )) {
@@ -242,6 +295,67 @@ export class AiService {
     return document;
   }
 
+  /**
+   * 视频总结：Map（按时间窗分块小结）→ Reduce（结构化 Markdown + 阅读卡）。
+   * 锚点经 normalizeAnchors 校验吸附，编造的时间点会被移除。
+   */
+  private async summarizeVideoDocument(document: {
+    id: string;
+    title: string;
+    author: string | null;
+    videoDurationSeconds: number | null;
+  }): Promise<{ payload: AnalysisPayload; markdown: string }> {
+    const transcript = await this.prisma.videoTranscript.findUnique({
+      where: { documentId: document.id },
+    });
+    const segments = (transcript?.segments as TranscriptSegment[] | null) ?? [];
+    if (!segments.length) {
+      throw new BadRequestException('该视频没有可用字幕记录，无法生成总结');
+    }
+
+    const chunks = chunkTranscriptByWindow(segments);
+    const chunkSummaries: VideoChunkSummary[] = [];
+    for (const chunk of chunks) {
+      const summary = (
+        await this.providerService.chatJson(
+          buildVideoMapMessages({
+            title: document.title,
+            chunkText: chunk.text,
+            startTime: chunk.startTime,
+            endTime: chunk.endTime,
+          }),
+        )
+      ).trim();
+      if (summary) {
+        chunkSummaries.push({
+          startTime: chunk.startTime,
+          endTime: chunk.endTime,
+          summary,
+        });
+      }
+    }
+    if (!chunkSummaries.length) {
+      throw new BadRequestException('字幕内容总结失败，请重试');
+    }
+
+    const payload = normalizeAnalysisPayload(
+      await this.providerService.chatJson(
+        buildVideoReduceMessages({
+          title: document.title,
+          uploader: document.author,
+          durationSeconds: document.videoDurationSeconds,
+          chunkSummaries,
+        }),
+      ),
+    );
+    const markdown = normalizeAnchors(payload.markdown ?? '', segments);
+    if (!markdown) {
+      throw new BadRequestException('总结生成结果为空，请重试');
+    }
+
+    return { payload, markdown };
+  }
+
   private async attachTags(userId: string, documentId: string, names: string[]) {
     for (const name of names) {
       const tag = await this.prisma.tag.upsert({
@@ -285,6 +399,7 @@ function normalizeAnalysisPayload(raw: string): AnalysisPayload {
     actions: normalizeStringArray(value.actions),
     audience: toString(value.audience),
     tags: normalizeStringArray(value.tags),
+    markdown: toString(value.markdown),
   };
 }
 

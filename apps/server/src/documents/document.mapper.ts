@@ -34,6 +34,8 @@ export function toDocumentSummary(document: DocumentWithTags): DocumentSummary {
     author: document.author,
     excerpt: document.excerpt,
     coverImage: document.coverImage,
+    videoPlatform: document.videoPlatform,
+    videoDurationSeconds: document.videoDurationSeconds,
     wordCount: document.wordCount,
     ingestStatus: document.ingestStatus,
     ingestErrorMessage: document.ingestErrorMessage,

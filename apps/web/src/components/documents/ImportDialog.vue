@@ -51,7 +51,7 @@ async function importDocument() {
     importUrl.value = ''
     toast({
       title: '导入任务已创建',
-      description: '文章会先进入解析队列，完成后自动生成 AI 摘要和标签。',
+      description: '内容会先进入解析队列；文章完成后自动生成 AI 摘要和标签，视频完成后生成字幕总结。',
       variant: 'success',
     })
     emit('imported', result.document.id)
@@ -92,8 +92,8 @@ async function importFile() {
 <template>
   <UiDialog
     :open="open"
-    title="导入文章"
-    description="输入 URL，或上传 Markdown / 文本文档。"
+    title="导入"
+    description="粘贴文章 URL 或 B 站视频链接，也可以上传 Markdown / 文本文档。"
     @update:open="emit('update:open', $event)"
   >
     <div class="dialog-form">
@@ -109,7 +109,7 @@ async function importFile() {
           <UiInput
             v-model.trim="importUrl"
             autocomplete="url"
-            placeholder="https://example.com/article"
+            placeholder="文章链接或 B 站视频链接"
           />
         </label>
         <div class="dialog-actions">
