@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { parseArticleFromHtml } from '@lumi/parser';
-import axios from 'axios';
+import axios, { type AxiosResponse } from 'axios';
 import { Worker, type Job } from 'bullmq';
 import type { RedisOptions } from 'ioredis';
 import { AiProviderService } from '../ai/ai-provider.service';
@@ -317,16 +317,33 @@ export class IngestProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private async fetchHtml(url: string): Promise<string> {
-    const response = await axios.get<string>(url, {
-      timeout: 15000,
-      responseType: 'text',
-      headers: {
-        'User-Agent': USER_AGENT,
-        Accept:
-          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-      transformResponse: [(data) => data],
-    });
+    let response: AxiosResponse<string>;
+    try {
+      response = await axios.get<string>(url, {
+        timeout: 15000,
+        responseType: 'text',
+        headers: {
+          'User-Agent': USER_AGENT,
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        transformResponse: [(data) => data],
+      });
+    } catch (error) {
+      // 4xx 基本是站点反爬（412 是宝塔类 WAF 的典型签名），给出可操作的指引
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      if (status === 412) {
+        throw new BadRequestException(
+          '目标网站开启了反爬防护，服务端无法抓取；可改用浏览器插件的「整页 HTML」导入',
+        );
+      }
+      if (status === 403 || status === 429) {
+        throw new BadRequestException(
+          '目标网站拒绝了抓取请求，可稍后重试或改用浏览器插件的「整页 HTML」导入',
+        );
+      }
+      throw error;
+    }
 
     if (typeof response.data !== 'string' || !response.data.trim()) {
       throw new BadRequestException('网页响应为空');

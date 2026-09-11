@@ -97,28 +97,13 @@
   width: 180px;
 }
 
+/* 索引任务搜索：复用 ui-search 组件（SearchInput），这里只约束宽度 */
 .settings-search {
-  display: grid;
   width: min(100%, 360px);
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0 var(--space-3);
-  color: var(--fg-muted);
-  background: var(--bg-primary);
 }
 
-.settings-search .ui-input {
-  border: 0;
-  padding-inline: 0;
-}
-
-.settings-search .ui-input:focus,
-.settings-search .ui-input:focus-visible {
-  border-color: transparent;
-  outline: none;
+.settings-search .ui-search {
+  width: 100%;
 }
 
 .jobs-table-card {

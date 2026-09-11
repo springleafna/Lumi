@@ -2,6 +2,7 @@ import { BadRequestException, forwardRef, Inject, Injectable } from '@nestjs/com
 import type { RuntimeAiConfig } from '../settings/settings.service';
 import { SettingsService } from '../settings/settings.service';
 import { buildConnectionTestMessages } from './prompts/connection-test';
+import { splitEmbeddingBatches } from '../common/text.utils';
 
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
@@ -155,6 +156,29 @@ export class AiProviderService {
     config: RuntimeAiConfig,
     texts: string[],
   ): Promise<{ vectors: number[][]; dimension: number }> {
+    // 单次批量超限会被供应商 / 中转网关以 {"data":null} 之类的异常响应拒绝，
+    // 按条数与总字符数分批发送
+    const batches = splitEmbeddingBatches(texts);
+    const vectors: number[][] = [];
+    let dimension = 0;
+
+    for (const batch of batches) {
+      const batchVectors = await this.embedBatchWithConfig(config, batch);
+      vectors.push(...batchVectors);
+      dimension = batchVectors[0]?.length ?? dimension;
+    }
+
+    if (vectors.length !== texts.length || !vectors[0]?.length) {
+      throw new BadRequestException('Embedding 返回内容不完整');
+    }
+
+    return { vectors, dimension };
+  }
+
+  private async embedBatchWithConfig(
+    config: RuntimeAiConfig,
+    texts: string[],
+  ): Promise<number[][]> {
     const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/embeddings`, {
       method: 'POST',
       headers: {
@@ -172,9 +196,15 @@ export class AiProviderService {
     }
 
     const data = (await response.json()) as {
-      data?: Array<{ embedding?: number[] }>;
+      data?: Array<{ embedding?: number[] }> | null;
     };
-    const vectors = (data.data || [])
+    if (!Array.isArray(data.data)) {
+      throw new BadRequestException(
+        'Embedding 服务返回了异常响应（data 为空），请检查 Embedding 配置或稍后重试',
+      );
+    }
+
+    const vectors = data.data
       .map((item) => item.embedding)
       .filter((item): item is number[] => Array.isArray(item));
 
@@ -187,7 +217,7 @@ export class AiProviderService {
       throw new BadRequestException('Embedding 返回向量维度不一致');
     }
 
-    return { vectors, dimension };
+    return vectors;
   }
 
   async testChatConfig(config: RuntimeAiConfig): Promise<void> {

@@ -10,7 +10,9 @@ import { BadRequestException } from '@nestjs/common';
 
 const BILIBILI_VIDEO_HOSTS = new Set(['www.bilibili.com', 'm.bilibili.com']);
 const BILIBILI_SHORT_HOST = 'b23.tv';
-const VIDEO_PATH_PATTERN = /^\/video\/(BV[0-9A-Za-z]{8,12}|av\d+)$/;
+// 允许尾斜杠：B 站 App 分享链接普遍是 /video/BVxxx/?share_medium=... 形态，
+// 严格匹配会把这类链接误判为文章，走到服务端抓取再被 B 站风控 412
+const VIDEO_PATH_PATTERN = /^\/video\/(BV[0-9A-Za-z]{8,12}|[aA][vV]\d+)\/?$/;
 const SHORT_LINK_TIMEOUT_MS = 5000;
 
 const SHORT_LINK_UA =
@@ -49,8 +51,10 @@ export function detectBilibiliVideo(rawUrl: string): BilibiliVideoRef | null {
   const match = url.pathname.match(VIDEO_PATH_PATTERN);
   if (!match) return null;
 
+  // BV 号大小写敏感需原样保留；av 前缀统一小写
+  const videoId = match[1].startsWith('BV') ? match[1] : match[1].toLowerCase();
   return {
-    videoId: match[1],
+    videoId,
     page: parsePageParam(url.searchParams.get('p')),
   };
 }

@@ -33,6 +33,24 @@ describe('bilibili.utils', () => {
       ).toEqual({ videoId: 'BV1hM8X6kEso', page: 3 });
     });
 
+    it('兼容 B 站 App 分享链接（尾斜杠 + 分享参数）', () => {
+      expect(
+        detectBilibiliVideo(
+          'https://www.bilibili.com/video/BV1hM8X6kEso/?share_medium=android&share_source=copy_link',
+        ),
+      ).toEqual({ videoId: 'BV1hM8X6kEso', page: 1 });
+      expect(
+        detectBilibiliVideo('https://www.bilibili.com/video/BV1hM8X6kEso/?p=2'),
+      ).toEqual({ videoId: 'BV1hM8X6kEso', page: 2 });
+    });
+
+    it('av 前缀大小写不敏感且规范化为小写', () => {
+      expect(detectBilibiliVideo('https://www.bilibili.com/video/AV170001')).toEqual({
+        videoId: 'av170001',
+        page: 1,
+      });
+    });
+
     it('无效分 P 参数回退到 1', () => {
       expect(
         detectBilibiliVideo('https://www.bilibili.com/video/BV1hM8X6kEso?p=0'),

@@ -6,7 +6,6 @@ import {
   LoaderCircle,
   RefreshCw,
   Rows3,
-  Search,
   Settings as SettingsIcon,
   XCircle,
 } from 'lucide-vue-next'
@@ -16,11 +15,11 @@ import UiBadge from '../components/ui/Badge.vue'
 import UiButton from '../components/ui/Button.vue'
 import UiCard from '../components/ui/Card.vue'
 import UiDialog from '../components/ui/Dialog.vue'
-import UiInput from '../components/ui/Input.vue'
 import UiPagination from '../components/ui/Pagination.vue'
 import UiSelect from '../components/ui/Select.vue'
 import UiTabs from '../components/ui/Tabs.vue'
 import ProviderConfigForm from '../components/settings/ProviderConfigForm.vue'
+import SearchInput from '../components/ui/SearchInput.vue'
 import { useAiSettings } from '../composables/useAiSettings'
 import {
   useEmbeddingJobs,
@@ -228,14 +227,9 @@ function formatDate(value?: string | null) {
         <section v-else class="settings-panel-list">
           <div class="settings-toolbar">
             <UiSelect v-model="jobsStatus" :options="statusOptions" @change="applyJobFilters" />
-            <div class="settings-search">
-              <Search :size="15" />
-              <UiInput
-                v-model="jobsKeyword"
-                placeholder="搜索文档标题"
-                @keyup.enter="applyJobFilters"
-              />
-            </div>
+            <form class="settings-search" @submit.prevent="applyJobFilters">
+              <SearchInput v-model="jobsKeyword" placeholder="搜索文档标题" />
+            </form>
             <UiButton variant="secondary" :disabled="jobsLoading" @click="loadJobs">
               <RefreshCw :size="15" />
               刷新
