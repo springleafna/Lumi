@@ -136,13 +136,29 @@ h2 {
 }
 
 .account-pill {
+  display: inline-flex;
   flex: 0 0 auto;
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  color: var(--bg-primary);
-  background: var(--fg-primary);
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 12px;
+  color: var(--fg-secondary);
+  background: var(--bg-primary);
   font-size: 12px;
   font-weight: 550;
+}
+
+.pill-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--success);
+}
+
+.account-pill.muted .pill-dot {
+  background: var(--fg-muted);
 }
 
 .account-pill.muted {

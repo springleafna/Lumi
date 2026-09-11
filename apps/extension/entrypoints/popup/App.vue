@@ -18,7 +18,6 @@ const currentPage = ref<CapturedPageUrl>();
 const savedDocument = ref<DocumentDetail>();
 const loading = ref(false);
 const message = ref('');
-const messageType = ref<'ok' | 'error'>('ok');
 
 const isLoggedIn = computed(() => Boolean(settings.value?.accessToken));
 
@@ -35,7 +34,7 @@ async function loadCurrentPage() {
   try {
     currentPage.value = await capturePageUrl();
   } catch (error) {
-    showMessage(getErrorMessage(error, '无法读取当前页面'), 'error');
+    showMessage(getErrorMessage(error, '无法读取当前页面'));
   }
 }
 
@@ -76,18 +75,18 @@ async function runSave(
   action: () => Promise<{ document: DocumentDetail }>,
 ) {
   if (!settings.value?.accessToken) {
-    showMessage('请先在设置页登录', 'error');
+    showMessage('请先在设置页登录');
     return;
   }
 
   loading.value = true;
+  message.value = '';
   savedDocument.value = undefined;
   try {
     const result = await action();
     savedDocument.value = result.document;
-    showMessage(`保存成功：${result.document.title}`, 'ok');
   } catch (error) {
-    showMessage(getErrorMessage(error, '保存失败'), 'error');
+    showMessage(getErrorMessage(error, '保存失败'));
   } finally {
     loading.value = false;
   }
@@ -98,9 +97,8 @@ async function openSavedDocument() {
   await openDocument(settings.value, savedDocument.value);
 }
 
-function showMessage(text: string, type: 'ok' | 'error') {
+function showMessage(text: string) {
   message.value = text;
-  messageType.value = type;
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -123,41 +121,57 @@ function getErrorMessage(error: unknown, fallback: string) {
       <button class="icon-button" title="设置" type="button" @click="openOptionsPage">设置</button>
     </header>
 
-    <section class="status-card">
-      <span class="status-dot" :class="{ muted: !isLoggedIn }"></span>
+    <button
+      v-if="!isLoggedIn"
+      class="status-card login-hint"
+      type="button"
+      @click="openOptionsPage"
+    >
+      <span class="status-dot muted"></span>
+      <span class="status-text">
+        <strong>未登录</strong>
+        <span class="status-sub">点击前往设置页登录 Lumi</span>
+      </span>
+    </button>
+    <section v-else class="status-card">
+      <span class="status-dot"></span>
       <div>
-        <strong>{{ isLoggedIn ? '已连接' : '未登录' }}</strong>
-        <p v-if="settings?.user">{{ settings.user.username }}</p>
-        <p v-else>请先进入设置页登录。</p>
+        <strong>已连接</strong>
+        <p>{{ settings?.user?.username }}</p>
       </div>
     </section>
 
-    <section class="page-card">
+    <section v-if="savedDocument" class="page-card result-card">
+      <p class="section-label">保存成功</p>
+      <h2>{{ savedDocument.title }}</h2>
+      <button
+        class="secondary-button result-button"
+        type="button"
+        @click="openSavedDocument"
+      >
+        查看文章
+      </button>
+    </section>
+    <section v-else class="page-card">
       <p class="section-label">当前页面</p>
       <h2>{{ currentPage?.title || '未读取到标题' }}</h2>
-      <p>{{ currentPage?.url || '未读取到 URL' }}</p>
+      <p class="page-url">{{ currentPage?.url || '未读取到 URL' }}</p>
     </section>
-
-    <p v-if="message" class="message" :class="messageType">{{ message }}</p>
 
     <div class="button-stack">
       <button class="primary-button" :disabled="loading || !isLoggedIn || !currentPage" type="button" @click="saveHtml">
         {{ loading ? '保存中...' : '保存完整页面' }}
       </button>
-      <button class="secondary-button" :disabled="loading || !isLoggedIn || !currentPage" type="button" @click="saveUrl">
-        保存当前 URL
-      </button>
-      <button class="secondary-button" :disabled="loading || !isLoggedIn || !currentPage" type="button" @click="saveSelection">
-        保存选中内容
-      </button>
-      <button
-        v-if="savedDocument"
-        class="secondary-button"
-        type="button"
-        @click="openSavedDocument"
-      >
-        打开文章
-      </button>
+      <div class="button-row">
+        <button class="secondary-button" :disabled="loading || !isLoggedIn || !currentPage" type="button" @click="saveUrl">
+          保存当前 URL
+        </button>
+        <button class="secondary-button" :disabled="loading || !isLoggedIn || !currentPage" type="button" @click="saveSelection">
+          保存选中内容
+        </button>
+      </div>
     </div>
+
+    <p v-if="message" class="message error">{{ message }}</p>
   </main>
 </template>

@@ -1,6 +1,6 @@
 {
   "name": "@lumi/extension",
-  "description": "manifest.json description",
+  "description": "保存网页到 Lumi 知识库",
   "private": true,
   "version": "0.0.0",
   "type": "module",

@@ -34,7 +34,6 @@
 
 body {
   width: 372px;
-  min-height: 430px;
   margin: 0;
   color: var(--fg-primary);
   background: var(--bg-primary);
@@ -179,15 +178,64 @@ h2 {
   height: 7px;
   flex: 0 0 auto;
   border-radius: 999px;
-  background: var(--fg-primary);
+  background: var(--success);
 }
 
 .status-dot.muted {
   background: var(--fg-muted);
 }
 
+.login-hint {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+}
+
+.login-hint:hover {
+  background: var(--bg-tertiary);
+}
+
+.login-hint .status-dot {
+  margin-top: 2px;
+}
+
+.status-text {
+  min-width: 0;
+}
+
+.login-hint strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--fg-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.status-sub {
+  display: block;
+  color: var(--fg-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .page-card {
   padding: 13px;
+}
+
+.page-url {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.result-card .section-label {
+  color: var(--success);
+}
+
+.result-button {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .message {
@@ -208,6 +256,12 @@ h2 {
 
 .button-stack {
   display: grid;
+  gap: 9px;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 9px;
 }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { LumiApiError } from '@lumi/api-client';
 import type { UserDto } from '@lumi/shared';
 import { createExtensionClient } from '../../utils/api';
@@ -12,9 +12,12 @@ const username = ref('admin');
 const password = ref('');
 const user = ref<UserDto | undefined>();
 const accessToken = ref<string | undefined>();
+const showLoginForm = ref(false);
 const loading = ref(false);
 const message = ref('');
 const messageType = ref<'ok' | 'error'>('ok');
+
+const isLoggedIn = computed(() => Boolean(accessToken.value));
 
 onMounted(load);
 
@@ -26,11 +29,13 @@ async function load() {
   accessToken.value = settings.accessToken;
 }
 
-async function saveBaseSettings() {
-  await saveSettings({
-    apiBaseUrl: normalizeBaseUrl(apiBaseUrl.value),
-    webBaseUrl: normalizeBaseUrl(webBaseUrl.value),
-  });
+/** 地址失焦 / 回车时静默保存，值没变时不提示。 */
+async function persistBaseSettings() {
+  const api = normalizeBaseUrl(apiBaseUrl.value);
+  const web = normalizeBaseUrl(webBaseUrl.value);
+  const current = await getSettings();
+  if (current.apiBaseUrl === api && current.webBaseUrl === web) return;
+  await saveSettings({ apiBaseUrl: api, webBaseUrl: web });
   await load();
   showMessage('设置已保存', 'ok');
 }
@@ -38,7 +43,7 @@ async function saveBaseSettings() {
 async function login() {
   loading.value = true;
   try {
-    await saveBaseSettings();
+    await persistBaseSettings();
     const settings = await getSettings();
     const client = await createExtensionClient(settings);
     const result = await client.auth.login({
@@ -50,6 +55,7 @@ async function login() {
       user: result.user,
     });
     password.value = '';
+    showLoginForm.value = false;
     await load();
     showMessage(`已登录：${result.user.username}`, 'ok');
   } catch (error) {
@@ -62,7 +68,7 @@ async function login() {
 async function testConnection() {
   loading.value = true;
   try {
-    await saveBaseSettings();
+    await persistBaseSettings();
     const settings = await getSettings();
     const client = await createExtensionClient(settings);
     const me = await client.auth.me();
@@ -70,7 +76,11 @@ async function testConnection() {
     await load();
     showMessage(`连接正常：${me.username}`, 'ok');
   } catch (error) {
-    showMessage(getErrorMessage(error, '连接失败或需要重新登录'), 'error');
+    if (error instanceof LumiApiError && isUnauthorized(error)) {
+      showMessage('服务可达，但尚未登录或登录已失效', 'ok');
+    } else {
+      showMessage(getErrorMessage(error, '连接失败'), 'error');
+    }
   } finally {
     loading.value = false;
   }
@@ -78,8 +88,13 @@ async function testConnection() {
 
 async function logout() {
   await clearAuth();
+  showLoginForm.value = false;
   await load();
   showMessage('已退出登录', 'ok');
+}
+
+function isUnauthorized(error: LumiApiError) {
+  return error.status === 401 || error.code === 'UNAUTHORIZED';
 }
 
 function normalizeBaseUrl(value: string) {
@@ -92,7 +107,12 @@ function showMessage(text: string, type: 'ok' | 'error') {
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof LumiApiError ? error.message : fallback;
+  if (error instanceof LumiApiError) {
+    return error.code === 'NETWORK_ERROR'
+      ? '无法连接服务，请检查 API 地址是否正确'
+      : error.message;
+  }
+  return fallback;
 }
 </script>
 
@@ -108,6 +128,7 @@ function getErrorMessage(error: unknown, fallback: string) {
           </div>
         </div>
         <div class="account-pill" :class="{ muted: !user }">
+          <span class="pill-dot"></span>
           {{ user ? `已登录：${user.username}` : '未登录' }}
         </div>
       </header>
@@ -120,21 +141,28 @@ function getErrorMessage(error: unknown, fallback: string) {
       <div class="form-card">
         <label>
           <span>API 地址</span>
-          <input v-model.trim="apiBaseUrl" placeholder="http://127.0.0.1:3000/api" />
+          <input
+            v-model.trim="apiBaseUrl"
+            placeholder="http://127.0.0.1:3000/api"
+            @blur="persistBaseSettings"
+            @keydown.enter.prevent="persistBaseSettings"
+          />
         </label>
         <label>
           <span>Web 地址</span>
-          <input v-model.trim="webBaseUrl" placeholder="http://localhost:5173" />
+          <input
+            v-model.trim="webBaseUrl"
+            placeholder="http://localhost:5173"
+            @blur="persistBaseSettings"
+            @keydown.enter.prevent="persistBaseSettings"
+          />
         </label>
-      </div>
 
-      <div class="actions">
-        <button class="secondary-button" :disabled="loading" type="button" @click="saveBaseSettings">
-          保存设置
-        </button>
-        <button class="secondary-button" :disabled="loading || !accessToken" type="button" @click="testConnection">
-          测试连接
-        </button>
+        <div class="actions">
+          <button class="secondary-button" :disabled="loading" type="button" @click="testConnection">
+            测试连接
+          </button>
+        </div>
       </div>
 
       <section class="section">
@@ -143,7 +171,26 @@ function getErrorMessage(error: unknown, fallback: string) {
           <p>{{ user ? `当前登录：${user.username}` : '当前未登录。' }}</p>
         </div>
 
-        <form class="form-stack" @submit.prevent="login">
+        <div v-if="isLoggedIn && !showLoginForm" class="actions">
+          <button
+            class="secondary-button"
+            :disabled="loading"
+            type="button"
+            @click="showLoginForm = true"
+          >
+            切换账号
+          </button>
+          <button
+            class="danger-button"
+            :disabled="loading"
+            type="button"
+            @click="logout"
+          >
+            退出登录
+          </button>
+        </div>
+
+        <form v-else class="form-stack" @submit.prevent="login">
           <label>
             <span>用户名</span>
             <input v-model.trim="username" autocomplete="username" />
@@ -156,8 +203,14 @@ function getErrorMessage(error: unknown, fallback: string) {
             <button class="primary-button" :disabled="loading" type="submit">
               {{ loading ? '处理中...' : '登录' }}
             </button>
-            <button class="danger-button" :disabled="loading || !accessToken" type="button" @click="logout">
-              退出登录
+            <button
+              v-if="isLoggedIn"
+              class="secondary-button"
+              :disabled="loading"
+              type="button"
+              @click="showLoginForm = false"
+            >
+              取消
             </button>
           </div>
         </form>
