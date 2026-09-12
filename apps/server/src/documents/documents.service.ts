@@ -403,10 +403,16 @@ export class DocumentsService {
       ...(params.favorite ? { favoritedAt: { not: null } } : {}),
       ...(keyword
         ? {
+            // 标签名参与关键词搜索：侧边栏标签筛选移除后，按标签找文章统一走搜索入口
             OR: [
               { title: { contains: keyword, mode: 'insensitive' } },
               { excerpt: { contains: keyword, mode: 'insensitive' } },
               { contentText: { contains: keyword, mode: 'insensitive' } },
+              {
+                tags: {
+                  some: { tag: { userId, name: { contains: keyword, mode: 'insensitive' } } },
+                },
+              },
             ],
           }
         : {}),

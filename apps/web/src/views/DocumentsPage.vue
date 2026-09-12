@@ -10,7 +10,6 @@ import {
   Plus,
   Settings,
   Star,
-  Tag,
   X,
 } from 'lucide-vue-next'
 import { LumiApiError } from '@lumi/api-client'
@@ -54,7 +53,6 @@ const {
   keyword,
   status,
   type,
-  tag,
   source,
   readingStatus,
   favoriteOnly,
@@ -64,7 +62,6 @@ const {
   total,
   loading,
   errorMessage,
-  selectedTagName,
   activeFilterCount,
   loadDocuments,
   applyFilters,
@@ -130,7 +127,6 @@ const pageTitle = computed(() => {
 
 const pageDescription = computed(() => {
   const parts = [`共 ${total.value} 篇`]
-  if (selectedTagName.value) parts.push(`标签：${selectedTagName.value}`)
   if (source.value) parts.push(`来源：${source.value}`)
   if (readingStatus.value) parts.push(readingStatusLabel(readingStatus.value))
   if (favoriteOnly.value) parts.push('收藏')
@@ -191,11 +187,6 @@ async function changeStatus(value: string) {
 
 async function changeType(value: DocumentType | '') {
   type.value = value
-  await applyFilters()
-}
-
-async function changeTag(value: string) {
-  tag.value = tag.value === value ? '' : value
   await applyFilters()
 }
 
@@ -373,25 +364,6 @@ function readingStatusLabel(value: DocumentSummary['readingStatus']) {
             <span>{{ option.label }}</span>
           </button>
         </nav>
-      </section>
-
-      <section class="sidebar-section">
-        <div class="sidebar-title">标签</div>
-        <nav v-if="facets.tags.length" class="sidebar-nav sidebar-filter-list">
-          <button
-            v-for="item in facets.tags"
-            :key="item.id"
-            class="sidebar-link"
-            :class="{ active: tag === item.id }"
-            type="button"
-            @click="changeTag(item.id)"
-          >
-            <Tag class="sidebar-link-icon" />
-            <span>{{ item.name }}</span>
-            <span class="sidebar-link-count">{{ item.count || 0 }}</span>
-          </button>
-        </nav>
-        <p v-else class="sidebar-empty">暂无标签</p>
       </section>
 
       <section class="sidebar-section">

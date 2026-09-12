@@ -197,7 +197,10 @@ const readingMeta = computed(() => {
   return [
     document.value.source || '未知来源',
     document.value.author,
-    document.value.wordCount ? `${document.value.wordCount} 字` : null,
+    // 视频的 wordCount 是字幕字数而非文章字数，不展示
+    !isVideoDocument.value && document.value.wordCount
+      ? `${document.value.wordCount} 字`
+      : null,
     document.value.publishedAt ? `发布 ${formatDate(document.value.publishedAt)}` : null,
   ].filter(Boolean)
 })
@@ -1006,13 +1009,11 @@ function getErrorMessage(error: unknown, fallback: string) {
               </div>
               <h1 class="article-detail-title">{{ document.title }}</h1>
               <div class="article-detail-meta">
-                <span>{{ document.source || '未知来源' }}</span>
+                <span v-for="item in readingMeta" :key="String(item)">{{ item }}</span>
                 <span>
                   <CalendarDays :size="14" />
-                  创建 {{ formatDate(document.createdAt) }}
+                  创建于 {{ formatDate(document.createdAt) }}
                 </span>
-                <span v-if="document.updatedAt">更新 {{ formatDate(document.updatedAt) }}</span>
-                <span v-for="item in readingMeta" :key="String(item)">{{ item }}</span>
               </div>
               <div class="article-index-status">
                 <p>{{ embeddingIndexDescription }}</p>

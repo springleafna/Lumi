@@ -77,8 +77,12 @@ function documentStatusLabel(document: DocumentSummary) {
   return ''
 }
 
-function shouldShowDocumentStatus(document: DocumentSummary) {
-  return Boolean(document.deletedAt || document.archivedAt || document.ingestStatus !== 'succeeded')
+function shouldShowDocumentStatus(document: DocumentSummary, status: DocumentStatus) {
+  if (document.ingestStatus !== 'succeeded') return true
+  // 归档/回收站列表里每张卡都处于该状态，徽章冗余且会挤占标签行，交给列表上下文表达
+  if (status === 'archived' && document.archivedAt) return false
+  if (status === 'trash' && document.deletedAt) return false
+  return Boolean(document.deletedAt || document.archivedAt)
 }
 
 const hasVideoCover = computed(
@@ -247,7 +251,7 @@ function hasHiddenDocumentTags(document: DocumentSummary) {
               {{ readingStatusLabel(document.readingStatus) }}
             </UiBadge>
             <UiBadge
-              v-if="shouldShowDocumentStatus(document)"
+              v-if="shouldShowDocumentStatus(document, status)"
               class="article-card-badge article-card-badge-state"
               :variant="documentStatusVariant(document)"
             >

@@ -24,7 +24,6 @@ export function useDocumentsQuery() {
   const keyword = ref('')
   const status = ref<DocumentStatus>('active')
   const type = ref<DocumentType | ''>('')
-  const tag = ref('')
   const source = ref('')
   const readingStatus = ref<DocumentReadingStatus | ''>('')
   const favoriteOnly = ref(false)
@@ -36,15 +35,10 @@ export function useDocumentsQuery() {
   const errorMessage = ref('')
   let pollingTimer: number | undefined
 
-  const selectedTagName = computed(
-    () => facets.value.tags.find((item) => item.id === tag.value)?.name,
-  )
-
   const activeFilterCount = computed(
     () =>
       Number(Boolean(keyword.value)) +
       Number(Boolean(type.value)) +
-      Number(Boolean(tag.value)) +
       Number(Boolean(source.value)) +
       Number(Boolean(readingStatus.value)) +
       Number(favoriteOnly.value),
@@ -70,7 +64,6 @@ export function useDocumentsQuery() {
         keyword: keyword.value || undefined,
         status: status.value,
         type: type.value || undefined,
-        tag: tag.value || undefined,
         source: source.value || undefined,
         readingStatus: readingStatus.value || undefined,
         favorite: favoriteOnly.value || undefined,
@@ -105,7 +98,6 @@ export function useDocumentsQuery() {
   async function clearFilters() {
     keyword.value = ''
     type.value = ''
-    tag.value = ''
     source.value = ''
     readingStatus.value = ''
     favoriteOnly.value = false
@@ -159,7 +151,6 @@ export function useDocumentsQuery() {
     keyword,
     status,
     type,
-    tag,
     source,
     readingStatus,
     favoriteOnly,
@@ -169,7 +160,6 @@ export function useDocumentsQuery() {
     total,
     loading,
     errorMessage,
-    selectedTagName,
     activeFilterCount,
     loadDocuments,
     loadFacets,
