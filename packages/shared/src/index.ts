@@ -173,6 +173,19 @@ export type AddDocumentTagRequest = {
   name: string;
 };
 
+export type RenameTagRequest = {
+  name: string;
+};
+
+export type MergeTagRequest = {
+  targetId: string;
+};
+
+export type MergeTagResult = {
+  tag: TagDto;
+  movedDocuments: number;
+};
+
 export type UpdateReadingStatusRequest = {
   readingStatus: DocumentReadingStatus;
 };

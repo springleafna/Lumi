@@ -5,10 +5,11 @@ import { IngestModule } from '../ingest/ingest.module';
 import { MediaModule } from '../media/media.module';
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
+import { TagsController } from './tags.controller';
 
 @Module({
   imports: [AuthModule, IngestModule, EmbeddingsModule, MediaModule],
-  controllers: [DocumentsController],
+  controllers: [DocumentsController, TagsController],
   providers: [DocumentsService],
   exports: [DocumentsService],
 })

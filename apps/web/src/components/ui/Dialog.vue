@@ -33,7 +33,11 @@ function close() {
           <div v-if="$slots.default" class="ui-dialog-body">
             <slot />
           </div>
-          <footer v-if="$slots.footer" class="ui-dialog-footer">
+          <footer
+            v-if="$slots.footer"
+            class="ui-dialog-footer"
+            :class="{ 'ui-dialog-footer--bare': !$slots.default }"
+          >
             <slot name="footer" />
           </footer>
         </section>

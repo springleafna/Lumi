@@ -111,7 +111,8 @@
 }
 
 .sidebar-filter-list {
-  max-height: 110px;
+  /* 标签列表移除后来源是唯一的筛选列表，限高随视口自适应以显示更多内容 */
+  max-height: 30vh;
   overflow-y: auto;
   padding-right: var(--space-1);
 }

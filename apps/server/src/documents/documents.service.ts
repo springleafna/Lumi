@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Prisma } from '../generated/prisma';
 import type {
   AnnotationDto,
@@ -374,6 +380,84 @@ export class DocumentsService {
     });
 
     return this.get(userId, id);
+  }
+
+  async renameTag(userId: string, tagId: string, rawName: string) {
+    const name = this.normalizeTagName(rawName);
+    const tag = await this.prisma.tag.findFirst({ where: { id: tagId, userId } });
+    if (!tag) {
+      throw new NotFoundException('标签不存在');
+    }
+    if (tag.name !== name) {
+      const duplicate = await this.prisma.tag.findFirst({ where: { userId, name } });
+      if (duplicate) {
+        throw new ConflictException('已存在同名标签，如需合并请使用合并功能');
+      }
+      await this.prisma.tag.update({ where: { id: tag.id }, data: { name } });
+    }
+    return this.toTagDto(tag.id, name);
+  }
+
+  async mergeTag(userId: string, sourceId: string, targetId: string) {
+    if (!targetId || sourceId === targetId) {
+      throw new BadRequestException('合并目标标签无效');
+    }
+    const [source, target] = await Promise.all([
+      this.prisma.tag.findFirst({ where: { id: sourceId, userId } }),
+      this.prisma.tag.findFirst({ where: { id: targetId, userId } }),
+    ]);
+    if (!source || !target) {
+      throw new NotFoundException('标签不存在');
+    }
+
+    const movedDocuments = await this.prisma.$transaction(async (tx) => {
+      const [sourceRelations, targetRelations] = await Promise.all([
+        tx.documentTag.findMany({ where: { tagId: source.id }, select: { documentId: true } }),
+        tx.documentTag.findMany({ where: { tagId: target.id }, select: { documentId: true } }),
+      ]);
+      const targetDocumentIds = new Set(targetRelations.map((item) => item.documentId));
+      const movable = sourceRelations.filter((item) => !targetDocumentIds.has(item.documentId));
+      if (movable.length > 0) {
+        await tx.documentTag.createMany({
+          data: movable.map((item) => ({ documentId: item.documentId, tagId: target.id })),
+        });
+      }
+      await tx.tag.delete({ where: { id: source.id } });
+      return movable.length;
+    });
+
+    return {
+      tag: await this.toTagDto(target.id, target.name),
+      movedDocuments,
+    };
+  }
+
+  async deleteTag(userId: string, tagId: string) {
+    const tag = await this.prisma.tag.findFirst({ where: { id: tagId, userId } });
+    if (!tag) {
+      throw new NotFoundException('标签不存在');
+    }
+    // DocumentTag 对 Tag 级联删除，文章本身不受影响
+    await this.prisma.tag.delete({ where: { id: tag.id } });
+    return { id: tag.id };
+  }
+
+  private normalizeTagName(rawName: string) {
+    const name = rawName?.trim() ?? '';
+    if (!name) {
+      throw new BadRequestException('标签名不能为空');
+    }
+    if (name.length > 30) {
+      throw new BadRequestException('标签名过长（最多 30 字）');
+    }
+    return name;
+  }
+
+  private async toTagDto(tagId: string, name: string) {
+    const count = await this.prisma.documentTag.count({
+      where: { tagId, document: { deletedAt: null } },
+    });
+    return { id: tagId, name, count };
   }
 
   private buildListWhere(

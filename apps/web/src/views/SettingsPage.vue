@@ -19,6 +19,7 @@ import UiPagination from '../components/ui/Pagination.vue'
 import UiSelect from '../components/ui/Select.vue'
 import UiTabs from '../components/ui/Tabs.vue'
 import ProviderConfigForm from '../components/settings/ProviderConfigForm.vue'
+import TagManager from '../components/settings/TagManager.vue'
 import SearchInput from '../components/ui/SearchInput.vue'
 import { useAiSettings } from '../composables/useAiSettings'
 import {
@@ -29,7 +30,7 @@ import {
 } from '../composables/useEmbeddingJobs'
 import lumiLogo from '../assets/lumi-logo.svg'
 
-type SettingsTab = 'ai' | 'jobs'
+type SettingsTab = 'ai' | 'jobs' | 'tags'
 
 const route = useRoute()
 const router = useRouter()
@@ -37,6 +38,7 @@ const router = useRouter()
 const tabs = [
   { value: 'ai', label: 'AI 设置' },
   { value: 'jobs', label: '索引任务' },
+  { value: 'tags', label: '标签管理' },
 ]
 
 const statusOptions = [
@@ -106,7 +108,7 @@ async function changeTab(value: string) {
   currentTab.value = normalizeTab(value)
   await router.replace({
     path: '/settings',
-    query: currentTab.value === 'jobs' ? { tab: 'jobs' } : {},
+    query: currentTab.value === 'ai' ? {} : { tab: currentTab.value },
   })
   if (currentTab.value === 'jobs' && jobs.value.length === 0) {
     await loadJobs()
@@ -119,7 +121,7 @@ async function onJobsPageChange(target: number) {
 }
 
 function normalizeTab(value: unknown): SettingsTab {
-  return value === 'jobs' ? 'jobs' : 'ai'
+  return value === 'jobs' || value === 'tags' ? value : 'ai'
 }
 
 function formatDate(value?: string | null) {
@@ -224,7 +226,7 @@ function formatDate(value?: string | null) {
           </UiCard>
         </section>
 
-        <section v-else class="settings-panel-list">
+        <section v-else-if="currentTab === 'jobs'" class="settings-panel-list">
           <div class="settings-toolbar">
             <UiSelect v-model="jobsStatus" :options="statusOptions" @change="applyJobFilters" />
             <form class="settings-search" @submit.prevent="applyJobFilters">
@@ -302,6 +304,8 @@ function formatDate(value?: string | null) {
             />
           </div>
         </section>
+
+        <TagManager v-else-if="currentTab === 'tags'" />
       </main>
     </div>
 

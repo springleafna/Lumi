@@ -28,16 +28,20 @@ import type {
   ListDocumentsParams,
   LoginRequest,
   LoginResponse,
+  MergeTagRequest,
+  MergeTagResult,
   PageResult,
   RegisterRequest,
   RetryAiAnalysisResponse,
   RetryEmbeddingJobResponse,
   RetryIngestResponse,
+  TagDto,
   UpdateAnnotationRequest,
   UpdateAiProviderConfigRequest,
   UpdateFavoriteRequest,
   UpdateKnowledgeChatSessionRequest,
   UpdateReadingStatusRequest,
+  RenameTagRequest,
   UserDto,
 } from '@lumi/shared';
 
@@ -255,6 +259,13 @@ export function createLumiClient(options: LumiClientOptions) {
           payload,
           onChunk,
         ),
+    },
+    tags: {
+      rename: (id: string, payload: RenameTagRequest) =>
+        request<TagDto>(http, 'patch', `/tags/${id}`, payload),
+      merge: (id: string, payload: MergeTagRequest) =>
+        request<MergeTagResult>(http, 'post', `/tags/${id}/merge`, payload),
+      remove: (id: string) => request<{ id: string }>(http, 'delete', `/tags/${id}`),
     },
   };
 }

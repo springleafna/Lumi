@@ -20,6 +20,7 @@ export type VideoReducePromptInput = {
   uploader?: string | null;
   durationSeconds?: number | null;
   chunkSummaries: VideoChunkSummary[];
+  existingTags?: string[];
 };
 
 /**
@@ -76,6 +77,9 @@ export function buildVideoReduceMessages(input: VideoReducePromptInput): ChatMes
         '5. 全文控制在 1200 字以内，使用中文。',
         '',
         '其余字段要求：oneSentenceSummary 为 60 字以内的一句话总结；keyPoints 为 3-8 条关键要点，每条一句话、末尾必须附 `[mm:ss]`（时间取自分块小结，作为视频速览跳转点）；concepts 为 0-8 个视频中提到的工具、人物或概念名词；tags 为 1-3 个 2-6 字的中文标签。全部使用中文。',
+        input.existingTags?.length
+          ? `知识库已有标签（按使用频率排序）：${input.existingTags.join('、')}。tags 必须优先从这些已有标签中选择，确实没有语义合适的才新建。`
+          : '',
         '',
         `视频标题：${input.title}`,
         `UP 主：${input.uploader || '未知'}`,

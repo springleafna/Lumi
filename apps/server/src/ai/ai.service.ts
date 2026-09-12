@@ -105,10 +105,11 @@ export class AiService {
     });
 
     try {
+      const existingTags = await this.getExistingTagCandidates(userId);
       let payload: AnalysisPayload;
       let markdown: string | null = null;
       if (document.type === 'video') {
-        const video = await this.summarizeVideoDocument(document);
+        const video = await this.summarizeVideoDocument(document, existingTags);
         payload = video.payload;
         markdown = video.markdown;
       } else {
@@ -119,6 +120,7 @@ export class AiService {
             author: document.author,
             excerpt: document.excerpt,
             contentText: document.contentText || document.markdown,
+            existingTags,
           }),
         );
         payload = normalizeAnalysisPayload(content);
@@ -299,12 +301,15 @@ export class AiService {
    * 视频总结：Map（按时间窗分块小结）→ Reduce（结构化 Markdown + 阅读卡）。
    * 锚点经 normalizeAnchors 校验吸附，编造的时间点会被移除。
    */
-  private async summarizeVideoDocument(document: {
-    id: string;
-    title: string;
-    author: string | null;
-    videoDurationSeconds: number | null;
-  }): Promise<{ payload: AnalysisPayload; markdown: string }> {
+  private async summarizeVideoDocument(
+    document: {
+      id: string;
+      title: string;
+      author: string | null;
+      videoDurationSeconds: number | null;
+    },
+    existingTags: string[],
+  ): Promise<{ payload: AnalysisPayload; markdown: string }> {
     const transcript = await this.prisma.videoTranscript.findUnique({
       where: { documentId: document.id },
     });
@@ -346,6 +351,7 @@ export class AiService {
           uploader: document.author,
           durationSeconds: document.videoDurationSeconds,
           chunkSummaries,
+          existingTags,
         }),
       ),
     );
@@ -357,6 +363,20 @@ export class AiService {
     // 阅读卡要点中的锚点与正文同规则校验（吸附/移除），保证抽屉跳转可信
     payload.keyPoints = (payload.keyPoints ?? []).map((point) => normalizeAnchors(point, segments));
     return { payload, markdown };
+  }
+
+  /**
+   * 打标候选：按使用频率取 Top 30 现有标签注入提示词，
+   * 引导模型优先复用，控制标签长尾增长。
+   */
+  private async getExistingTagCandidates(userId: string): Promise<string[]> {
+    const tags = await this.prisma.tag.findMany({
+      where: { userId },
+      orderBy: { documents: { _count: 'desc' } },
+      take: 30,
+      select: { name: true },
+    });
+    return tags.map((tag) => tag.name);
   }
 
   private async attachTags(userId: string, documentId: string, names: string[]) {
