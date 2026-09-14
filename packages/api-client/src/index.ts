@@ -9,6 +9,7 @@ import type {
   ApiResponse,
   CreateAnnotationRequest,
   CreateAiConversationRequest,
+  CreateEmbeddingJobRequest,
   CreateKnowledgeChatRequest,
   DocumentDetail,
   DocumentEmbeddingJobChunksDto,
@@ -124,6 +125,8 @@ export function createLumiClient(options: LumiClientOptions) {
           undefined,
           { params },
         ),
+      create: (payload: CreateEmbeddingJobRequest) =>
+        request<DocumentEmbeddingJobDto>(http, 'post', '/settings/embedding-jobs', payload),
       retry: (id: string) =>
         request<RetryEmbeddingJobResponse>(
           http,

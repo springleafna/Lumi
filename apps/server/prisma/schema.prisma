@@ -286,6 +286,9 @@ model DocumentEmbeddingChunk {
   contentHash String?
   startOffset Int
   endOffset   Int
+  // 视频字幕分块的起止秒数；文章分块为空
+  startSeconds Int?
+  endSeconds   Int?
 
   provider          String
   model             String
@@ -354,6 +357,9 @@ model KnowledgeChatCitation {
   score         Float?
   startOffset   Int?
   endOffset     Int?
+  // 视频来源引用的时间定位（秒）；文章来源为空
+  startSeconds  Int?
+  endSeconds    Int?
 
   documentTitleSnapshot      String
   documentSourceSnapshot     String?

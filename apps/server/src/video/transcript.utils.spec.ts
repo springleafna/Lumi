@@ -4,6 +4,7 @@ import {
   normalizeAnchors,
   normalizeSegments,
   parseSubtitleFile,
+  splitTranscriptIntoChunks,
 } from './transcript.utils';
 
 describe('transcript.utils', () => {
@@ -170,6 +171,44 @@ describe('transcript.utils', () => {
       expect(formatTimestamp(0)).toBe('00:00');
       expect(formatTimestamp(61)).toBe('01:01');
       expect(formatTimestamp(754.6)).toBe('12:34');
+    });
+  });
+
+  describe('splitTranscriptIntoChunks', () => {
+    it('按字符预算在句边界切块，并记录首末句时间', () => {
+      const segments = [
+        { start: 0, end: 4, text: 'a'.repeat(600) },
+        { start: 4, end: 8, text: 'b'.repeat(350) },
+        { start: 8, end: 12, text: 'c'.repeat(700) },
+      ];
+      const chunks = splitTranscriptIntoChunks(segments);
+      expect(chunks).toEqual([
+        {
+          content: `${'a'.repeat(600)}\n${'b'.repeat(350)}`,
+          startSeconds: 0,
+          endSeconds: 8,
+        },
+        {
+          content: 'c'.repeat(700),
+          startSeconds: 8,
+          endSeconds: 12,
+        },
+      ]);
+    });
+
+    it('过滤空文本句段，单句超预算也独立成块', () => {
+      const segments = [
+        { start: 0, end: 2, text: '  ' },
+        { start: 2, end: 6, text: 'x'.repeat(1200) },
+      ];
+      const chunks = splitTranscriptIntoChunks(segments);
+      expect(chunks).toEqual([
+        { content: 'x'.repeat(1200), startSeconds: 2, endSeconds: 6 },
+      ]);
+    });
+
+    it('空输入返回空数组', () => {
+      expect(splitTranscriptIntoChunks([])).toEqual([]);
     });
   });
 

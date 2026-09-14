@@ -260,7 +260,7 @@ function formatDate(value?: string | null) {
             >
               <div class="job-main">
                 <div class="job-title-line">
-                  <h3>{{ job.documentTitle }}</h3>
+                  <h3 :title="job.documentTitle">{{ job.documentTitle }}</h3>
                   <UiBadge :variant="statusVariant(job.status)">
                     {{ statusLabel(job.status) }}
                   </UiBadge>

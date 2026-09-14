@@ -13,11 +13,14 @@ import { AiProviderService } from '../ai/ai-provider.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
 import { getErrorMessage } from '../common/error.utils';
+import { splitTranscriptIntoChunks, type TranscriptSegment } from '../video/transcript.utils';
 
 type ChunkDraft = {
   content: string;
   startOffset: number;
   endOffset: number;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
 };
 
 type VectorSearchRow = {
@@ -26,6 +29,8 @@ type VectorSearchRow = {
   content: string;
   startOffset: number;
   endOffset: number;
+  startSeconds: number | null;
+  endSeconds: number | null;
   score: number;
   documentId: string;
   documentTitle: string;
@@ -60,37 +65,69 @@ export class EmbeddingsService {
           userId,
           deletedAt: null,
           ingestStatus: 'succeeded',
-          type: { in: ['article', 'fragment'] },
+          type: { in: ['article', 'fragment', 'video'] },
+          // 视频须有字幕才可入库；文章/片段不受影响
+          OR: [
+            { type: { in: ['article', 'fragment'] } },
+            { videoTranscript: { isNot: null } },
+          ],
         },
         select: { id: true },
       });
       if (!document) return null;
 
-      const job = await this.prisma.documentEmbeddingJob.create({
-        data: {
-          userId,
-          documentId,
-          status: 'pending',
-        },
-      });
-
-      try {
-        await this.queueService.addEmbeddingJob({ jobId: job.id });
-      } catch (error) {
-        await this.prisma.documentEmbeddingJob.update({
-          where: { id: job.id },
-          data: {
-            status: 'failed',
-            errorMessage: getErrorMessage(error),
-            finishedAt: new Date(),
-          },
-        });
-      }
-
-      return job;
+      return await this.createPendingJobAndDispatch(userId, documentId);
     } catch {
       return null;
     }
+  }
+
+  /** 手动为文档建立索引任务（设置页/详情页「建立索引」入口）。 */
+  async createJob(userId: string, documentId: string) {
+    const document = await this.prisma.document.findFirst({
+      where: {
+        id: documentId,
+        userId,
+        deletedAt: null,
+        ingestStatus: 'succeeded',
+        type: { in: ['article', 'fragment', 'video'] },
+        OR: [
+          { type: { in: ['article', 'fragment'] } },
+          { videoTranscript: { isNot: null } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!document) {
+      throw new BadRequestException('该文档不在可索引范围（视频需已获取字幕）');
+    }
+
+    return this.createPendingJobAndDispatch(userId, documentId);
+  }
+
+  private async createPendingJobAndDispatch(userId: string, documentId: string) {
+    const job = await this.prisma.documentEmbeddingJob.create({
+      data: {
+        userId,
+        documentId,
+        status: 'pending',
+      },
+    });
+
+    try {
+      await this.queueService.addEmbeddingJob({ jobId: job.id });
+    } catch (error) {
+      await this.prisma.documentEmbeddingJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'failed',
+          errorMessage: getErrorMessage(error),
+          finishedAt: new Date(),
+        },
+      });
+    }
+
+    return job;
   }
 
   async processEmbeddingJob(jobId: string) {
@@ -116,19 +153,38 @@ export class EmbeddingsService {
       if (
         document.deletedAt ||
         document.ingestStatus !== 'succeeded' ||
-        !['article', 'fragment'].includes(document.type)
+        !['article', 'fragment', 'video'].includes(document.type)
       ) {
-        throw new BadRequestException('文章不在可索引范围');
+        throw new BadRequestException('文档不在可索引范围');
       }
 
-      const text = (document.contentText || document.markdown || '').trim();
-      if (!text) {
-        throw new BadRequestException('文章正文为空，无法索引');
+      let chunks: ChunkDraft[];
+      if (document.type === 'video') {
+        const transcript = await this.prisma.videoTranscript.findUnique({
+          where: { documentId: document.id },
+        });
+        const segments = (transcript?.segments as TranscriptSegment[] | null) ?? [];
+        if (!segments.length) {
+          throw new BadRequestException('该视频没有可用字幕，无法索引');
+        }
+        chunks = splitTranscriptIntoChunks(segments).map((chunk) => ({
+          content: chunk.content,
+          // 视频分块没有全文级字符偏移，start/endOffset 记录块内范围；定位用秒数字段
+          startOffset: 0,
+          endOffset: chunk.content.length,
+          startSeconds: chunk.startSeconds,
+          endSeconds: chunk.endSeconds,
+        }));
+      } else {
+        const text = (document.contentText || document.markdown || '').trim();
+        if (!text) {
+          throw new BadRequestException('文章正文为空，无法索引');
+        }
+        chunks = splitTextIntoChunks(text);
       }
 
-      const chunks = splitTextIntoChunks(text);
       if (!chunks.length) {
-        throw new BadRequestException('文章正文为空，无法索引');
+        throw new BadRequestException('没有可索引的内容');
       }
 
       const embedding = await this.aiProviderService.embedTexts(chunks.map((chunk) => chunk.content));
@@ -237,6 +293,8 @@ export class EmbeddingsService {
             contentHash: true,
             startOffset: true,
             endOffset: true,
+            startSeconds: true,
+            endSeconds: true,
             provider: true,
             model: true,
             dimension: true,
@@ -317,13 +375,15 @@ export class EmbeddingsService {
         type: true,
         ingestStatus: true,
         deletedAt: true,
+        videoTranscript: { select: { documentId: true } },
       },
     });
     if (
       !document ||
       document.deletedAt ||
       document.ingestStatus !== 'succeeded' ||
-      !['article', 'fragment'].includes(document.type)
+      !['article', 'fragment', 'video'].includes(document.type) ||
+      (document.type === 'video' && !document.videoTranscript)
     ) {
       return { status: 'not_applicable', errorMessage: null, indexedAt: null };
     }
@@ -370,6 +430,8 @@ export class EmbeddingsService {
         c."content",
         c."startOffset",
         c."endOffset",
+        c."startSeconds",
+        c."endSeconds",
         (1 - (c."embedding" <=> $1::vector))::float AS "score",
         d."id" AS "documentId",
         d."title" AS "documentTitle",
@@ -383,7 +445,7 @@ export class EmbeddingsService {
         AND c."dimension" = $4
         AND d."deletedAt" IS NULL
         AND d."ingestStatus" = 'succeeded'
-        AND d."type" IN ('article', 'fragment')
+        AND d."type" IN ('article', 'fragment', 'video')
       ORDER BY c."embedding" <=> $1::vector
       LIMIT 40
       `,
@@ -427,45 +489,49 @@ export class EmbeddingsService {
       for (let index = 0; index < input.chunks.length; index += 1) {
         const chunk = input.chunks[index];
         const vector = input.vectors[index];
-        await tx.$executeRawUnsafe(
-          `
-          INSERT INTO "DocumentEmbeddingChunk" (
-            "id",
-            "chunkIndex",
-            "content",
-            "contentHash",
-            "startOffset",
-            "endOffset",
-            "provider",
-            "model",
-            "dimension",
-            "configFingerprint",
-            "embedding",
-            "createdAt",
-            "updatedAt",
-            "documentId",
-            "jobId",
-            "userId"
-          ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::vector,
-            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $12, $13, $14
-          )
-          `,
-          createCuidLikeId(),
-          index,
-          chunk.content,
-          hashText(chunk.content),
-          chunk.startOffset,
-          chunk.endOffset,
-          input.provider,
-          input.model,
-          input.dimension,
-          input.configFingerprint,
-          toVectorLiteral(vector),
-          input.documentId,
-          input.jobId,
-          input.userId,
-        );
+      await tx.$executeRawUnsafe(
+        `
+        INSERT INTO "DocumentEmbeddingChunk" (
+          "id",
+          "chunkIndex",
+          "content",
+          "contentHash",
+          "startOffset",
+          "endOffset",
+          "startSeconds",
+          "endSeconds",
+          "provider",
+          "model",
+          "dimension",
+          "configFingerprint",
+          "embedding",
+          "createdAt",
+          "updatedAt",
+          "documentId",
+          "jobId",
+          "userId"
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::vector,
+          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $14, $15, $16
+        )
+        `,
+        createCuidLikeId(),
+        index,
+        chunk.content,
+        hashText(chunk.content),
+        chunk.startOffset,
+        chunk.endOffset,
+        chunk.startSeconds ?? null,
+        chunk.endSeconds ?? null,
+        input.provider,
+        input.model,
+        input.dimension,
+        input.configFingerprint,
+        toVectorLiteral(vector),
+        input.documentId,
+        input.jobId,
+        input.userId,
+      );
       }
     });
   }
@@ -586,6 +652,8 @@ function toEmbeddingChunkDto(chunk: {
   contentHash: string | null;
   startOffset: number;
   endOffset: number;
+  startSeconds: number | null;
+  endSeconds: number | null;
   provider: string;
   model: string;
   dimension: number;
@@ -602,6 +670,8 @@ function toEmbeddingChunkDto(chunk: {
     contentHash: chunk.contentHash,
     startOffset: chunk.startOffset,
     endOffset: chunk.endOffset,
+    startSeconds: chunk.startSeconds,
+    endSeconds: chunk.endSeconds,
     provider: chunk.provider,
     model: chunk.model,
     dimension: chunk.dimension,

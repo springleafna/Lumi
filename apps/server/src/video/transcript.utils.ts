@@ -201,6 +201,49 @@ export function formatTranscriptForPrompt(segments: TranscriptSegment[]): string
   return segments.map((segment) => `[${formatTimestamp(segment.start)}] ${segment.text}`).join('\n');
 }
 
+export type TranscriptRetrievalChunk = {
+  content: string;
+  startSeconds: number;
+  endSeconds: number;
+};
+
+/**
+ * 知识库检索用的字幕分块：约 1000 字符一块，按句段边界对齐（不跨句截断），
+ * 每块记录首末句的起止秒数供引用跳转定位。与摘要用的 chunkTranscriptByWindow
+ * 分工不同——检索块要小而准，摘要块要大而全。
+ */
+export function splitTranscriptIntoChunks(segments: TranscriptSegment[]): TranscriptRetrievalChunk[] {
+  const targetLength = 1000;
+  const chunks: TranscriptRetrievalChunk[] = [];
+  let current: TranscriptSegment[] = [];
+  let currentLength = 0;
+
+  const flush = () => {
+    if (!current.length) return;
+    const first = current[0]!;
+    const last = current[current.length - 1]!;
+    chunks.push({
+      content: current.map((segment) => segment.text).join('\n'),
+      startSeconds: Math.max(0, Math.floor(first.start)),
+      endSeconds: Math.ceil(last.end),
+    });
+    current = [];
+    currentLength = 0;
+  };
+
+  for (const segment of segments) {
+    if (!segment.text.trim()) continue;
+    if (current.length && currentLength + segment.text.length > targetLength) {
+      flush();
+    }
+    current.push(segment);
+    currentLength += segment.text.length;
+  }
+  flush();
+
+  return chunks;
+}
+
 const ANCHOR_PATTERN = /\[(\d{1,3}):(\d{2})\]/g;
 const ANCHOR_TOLERANCE_SECONDS = 2;
 

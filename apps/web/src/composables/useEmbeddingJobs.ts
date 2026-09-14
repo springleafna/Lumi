@@ -8,6 +8,7 @@ import type {
 } from '@lumi/shared'
 import { useToast } from './useToast'
 import { client } from '../lib/client'
+import { formatVideoDuration } from '../lib/video-anchor'
 
 const PAGE_SIZE = 20
 
@@ -163,5 +164,9 @@ export function statusVariant(status: DocumentEmbeddingStatus) {
 }
 
 export function formatChunkMeta(chunk: DocumentEmbeddingChunkDto) {
+  // 视频字幕分块以时间范围定位；文章分块展示全文级字符偏移
+  if (typeof chunk.startSeconds === 'number' && typeof chunk.endSeconds === 'number') {
+    return `${chunk.content.length} 字符 · ${formatVideoDuration(chunk.startSeconds)}-${formatVideoDuration(chunk.endSeconds)}`
+  }
   return `${chunk.content.length} 字符 · ${chunk.startOffset}-${chunk.endOffset}`
 }

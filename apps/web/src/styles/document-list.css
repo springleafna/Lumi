@@ -56,7 +56,6 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: var(--space-4);
-  align-items: start;
 }
 
 .article-card-shell {
@@ -77,6 +76,8 @@
 
 .article-card {
   display: flex;
+  /* 网格项默认 stretch：height:100% 让同行卡片等高，footer 靠 margin-top:auto 吸底 */
+  height: 100%;
   min-height: 214px;
   flex-direction: column;
   gap: var(--space-3);

@@ -341,6 +341,8 @@ export type DocumentEmbeddingChunkDto = {
   contentHash?: string | null;
   startOffset: number;
   endOffset: number;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
   provider: string;
   model: string;
   dimension: number;
@@ -360,6 +362,10 @@ export type RetryEmbeddingJobResponse = {
   job: DocumentEmbeddingJobDto;
 };
 
+export type CreateEmbeddingJobRequest = {
+  documentId: string;
+};
+
 export type KnowledgeChatCitationDto = {
   id: string;
   index: number;
@@ -367,6 +373,8 @@ export type KnowledgeChatCitationDto = {
   score?: number | null;
   startOffset?: number | null;
   endOffset?: number | null;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
   documentId?: string | null;
   chunkId?: string | null;
   documentTitle: string;

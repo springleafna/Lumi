@@ -366,7 +366,10 @@ export function useKnowledgeChat() {
   function openCitation(citation: KnowledgeChatCitationDto) {
     if (!canOpenCitation(citation) || !citation.documentId) return
     const query: Record<string, string> = {}
-    if (typeof citation.startOffset === 'number' && typeof citation.endOffset === 'number') {
+    // 视频引用按秒定位；字符偏移仅文章有，两者互斥避免详情页误做全文高亮
+    if (typeof citation.startSeconds === 'number') {
+      query.t = String(citation.startSeconds)
+    } else if (typeof citation.startOffset === 'number' && typeof citation.endOffset === 'number') {
       query.citationStart = String(citation.startOffset)
       query.citationEnd = String(citation.endOffset)
     }

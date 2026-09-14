@@ -24,6 +24,7 @@ import UiEmptyState from '../components/ui/EmptyState.vue'
 import UiInput from '../components/ui/Input.vue'
 import { useMarkdownRenderer } from '../composables/useMarkdownRenderer'
 import { useKnowledgeChat } from '../composables/useKnowledgeChat'
+import { formatVideoDuration } from '../lib/video-anchor'
 import lumiLogo from '../assets/lumi-logo.svg'
 
 const router = useRouter()
@@ -331,6 +332,9 @@ function formatDate(value?: string | null) {
                     </span>
                     <span class="knowledge-citation-meta">
                       {{ citation.documentSource || '本地' }}
+                      <span v-if="typeof citation.startSeconds === 'number'">
+                        · {{ formatVideoDuration(citation.startSeconds) }}
+                      </span>
                       <span v-if="citation.sourceDeleted"> · 来源已删除</span>
                     </span>
                     <span class="knowledge-citation-excerpt">{{ citation.excerpt }}</span>

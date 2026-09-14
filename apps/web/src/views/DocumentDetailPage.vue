@@ -254,7 +254,11 @@ const embeddingIndexDescription = computed(() => {
     return document.value?.embeddingIndexErrorMessage || '索引生成失败，可在设置页重试该任务。'
   }
   if (status === 'not_configured') return '需要先在设置页配置 Embedding，后续新文档才会自动进入知识库问答。'
-  if (status === 'not_applicable') return '当前文档不在知识库索引范围内，或尚未创建索引任务。'
+  if (status === 'not_applicable') {
+    return isVideoDocument.value
+      ? '视频字幕尚未进入知识库问答，可建立索引让字幕内容参与问答。'
+      : '当前文档不在知识库索引范围内，或尚未创建索引任务。'
+  }
   return '暂无索引状态。'
 })
 
@@ -267,6 +271,18 @@ onMounted(async () => {
     }
   }, 4000)
 })
+
+// 知识库问答的视频引用跳转带 ?t=秒：首个加载周期定位播放，轮询刷新不重复触发
+let appliedQuerySeek = false
+
+function applyQuerySeekOnce() {
+  if (appliedQuerySeek || document.value?.type !== 'video') return
+  const seconds = Number(route.query.t)
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    appliedQuerySeek = true
+    seekVideo(Math.floor(seconds))
+  }
+}
 
 watch(citationRange, async () => {
   await nextTick()
@@ -299,6 +315,7 @@ async function loadDocument(options: { silent?: boolean } = {}) {
     }
     await nextTick()
     refreshRuntimeToc()
+    applyQuerySeekOnce()
     scrollToCitationRange()
   } catch (error) {
     notifyError(error, '文章加载失败')
@@ -759,6 +776,23 @@ async function handleTocNavigate(id: string) {
   if (seconds !== null) seekVideo(seconds)
 }
 
+// 存量视频（及需要重建的文章）手动建立知识库索引
+const creatingEmbeddingIndex = ref(false)
+
+async function createEmbeddingIndex() {
+  if (!document.value) return
+  creatingEmbeddingIndex.value = true
+  try {
+    await client.embeddingJobs.create({ documentId: document.value.id })
+    toast({ title: '已加入知识库索引队列', variant: 'success' })
+    await loadDocument({ silent: true })
+  } catch (error) {
+    notifyError(error, '创建索引任务失败')
+  } finally {
+    creatingEmbeddingIndex.value = false
+  }
+}
+
 async function runDetailAction(action: () => Promise<void>, fallback: string) {
   actionLoading.value = true
   errorMessage.value = ''
@@ -1017,6 +1051,15 @@ function getErrorMessage(error: unknown, fallback: string) {
               </div>
               <div class="article-index-status">
                 <p>{{ embeddingIndexDescription }}</p>
+                <UiButton
+                  v-if="isVideoDocument && transcript && document.embeddingIndexStatus === 'not_applicable'"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="creatingEmbeddingIndex"
+                  @click="createEmbeddingIndex"
+                >
+                  建立知识库索引
+                </UiButton>
                 <UiButton
                   v-if="document.embeddingIndexStatus === 'failed' || document.embeddingIndexStatus === 'not_configured'"
                   variant="secondary"

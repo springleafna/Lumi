@@ -1,5 +1,5 @@
-import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import type { DocumentEmbeddingStatus, UserDto } from '@lumi/shared';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import type { CreateEmbeddingJobRequest, DocumentEmbeddingStatus, UserDto } from '@lumi/shared';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { EmbeddingsService } from './embeddings.service';
@@ -8,6 +8,11 @@ import { EmbeddingsService } from './embeddings.service';
 @UseGuards(JwtAuthGuard)
 export class EmbeddingsController {
   constructor(private readonly embeddingsService: EmbeddingsService) {}
+
+  @Post()
+  createJob(@CurrentUser() user: UserDto, @Body() body: CreateEmbeddingJobRequest) {
+    return this.embeddingsService.createJob(user.id, body.documentId);
+  }
 
   @Get()
   listJobs(

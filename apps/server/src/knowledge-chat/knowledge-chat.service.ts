@@ -44,6 +44,8 @@ type CitationWithRelations = {
   score: number | null;
   startOffset: number | null;
   endOffset: number | null;
+  startSeconds: number | null;
+  endSeconds: number | null;
   documentId: string | null;
   chunkId: string | null;
   documentTitleSnapshot: string;
@@ -339,26 +341,30 @@ export class KnowledgeChatService {
 
   private async saveCitations(messageId: string, sources: CitedSource[]) {
     if (!sources.length) return [];
-    await this.prisma.knowledgeChatCitation.createMany({
-      data: sources.map((source, index) => {
-        // 检索结果按相似度排序，组内首个片段即该文档最相关的片段
-        const best = source.chunks[0];
-        return {
-          messageId,
-          citationIndex: index + 1,
-          excerpt: best.content,
-          score: best.score,
-          startOffset: best.startOffset,
-          endOffset: best.endOffset,
-          documentId: source.documentId,
-          chunkId: best.id,
-          documentTitleSnapshot: source.documentTitle,
-          documentSourceSnapshot: source.documentSource,
-          documentArchivedAtSnapshot: source.documentArchivedAt,
-          documentCreatedAtSnapshot: source.documentCreatedAt,
-        };
-      }),
-    });
+      await this.prisma.knowledgeChatCitation.createMany({
+        data: sources.map((source, index) => {
+          // 检索结果按相似度排序，组内首个片段即该文档最相关的片段
+          const best = source.chunks[0];
+          // 视频分块没有全文级字符偏移（start/endOffset 只是块内占位），引用定位走秒数
+          const hasSeconds = best.startSeconds != null;
+          return {
+            messageId,
+            citationIndex: index + 1,
+            excerpt: best.content,
+            score: best.score,
+            startOffset: hasSeconds ? null : best.startOffset,
+            endOffset: hasSeconds ? null : best.endOffset,
+            startSeconds: best.startSeconds ?? null,
+            endSeconds: best.endSeconds ?? null,
+            documentId: source.documentId,
+            chunkId: best.id,
+            documentTitleSnapshot: source.documentTitle,
+            documentSourceSnapshot: source.documentSource,
+            documentArchivedAtSnapshot: source.documentArchivedAt,
+            documentCreatedAtSnapshot: source.documentCreatedAt,
+          };
+        }),
+      });
     return this.prisma.knowledgeChatCitation.findMany({
       where: { messageId },
       include: {
@@ -522,13 +528,17 @@ function toMessageDto(message: MessageWithCitations): KnowledgeChatMessageDto {
 }
 
 function toCitationDto(citation: CitationWithRelations): KnowledgeChatCitationDto {
+  // 兼容修复前已落库的视频引用：有秒数的引用不回传字符偏移，避免详情页误做全文高亮
+  const hasSeconds = citation.startSeconds != null;
   return {
     id: citation.id,
     index: citation.citationIndex,
     excerpt: citation.excerpt,
     score: citation.score,
-    startOffset: citation.startOffset,
-    endOffset: citation.endOffset,
+    startOffset: hasSeconds ? null : citation.startOffset,
+    endOffset: hasSeconds ? null : citation.endOffset,
+    startSeconds: citation.startSeconds,
+    endSeconds: citation.endSeconds,
     documentId: citation.documentId,
     chunkId: citation.chunkId,
     documentTitle: citation.documentTitleSnapshot,
