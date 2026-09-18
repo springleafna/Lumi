@@ -112,7 +112,7 @@
 
 .sidebar-filter-list {
   /* 标签列表移除后来源是唯一的筛选列表，限高随视口自适应以显示更多内容 */
-  max-height: 30vh;
+  max-height: 22.5vh;
   overflow-y: auto;
   padding-right: var(--space-1);
 }
@@ -195,4 +195,92 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* 侧边栏切换按钮：吸附在侧栏与内容区分界线上，垂直居中；fixed 以避开侧栏 overflow 裁剪 */
+.sidebar-toggle {
+  position: fixed;
+  top: 50%;
+  left: calc(var(--sidebar-width) - 14px);
+  z-index: 30;
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-50%);
+}
+
+/* 收起态（图标栏）：仅桌面双栏布局生效，≤920px 堆叠布局不受影响 */
+@media (min-width: 921px) {
+  .sidebar {
+    transition: width 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .sidebar.is-collapsed {
+    width: 76px;
+    align-items: center;
+    /* 内容与栏宽等宽时子像素舍入会产生横向滚动条，图标栏禁止横向滚动 */
+    overflow-x: hidden;
+  }
+
+  .sidebar.is-collapsed .sidebar-section {
+    width: 100%;
+  }
+
+  .sidebar.is-collapsed .sidebar-toggle {
+    left: 62px;
+  }
+
+  .sidebar.is-collapsed .sidebar-section-brand {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .sidebar.is-collapsed .sidebar-brand-link {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .sidebar.is-collapsed .sidebar-brand-link span {
+    display: none;
+  }
+
+  .sidebar.is-collapsed .sidebar-section:not(.sidebar-section-brand):not(.sidebar-section-nav) {
+    display: none;
+  }
+
+  .sidebar.is-collapsed .sidebar-title,
+  .sidebar.is-collapsed .sidebar-empty,
+  .sidebar.is-collapsed .sidebar-link-count {
+    display: none;
+  }
+
+  /* 导航链接收起后只留图标；漏掉这条会让文字竖排撑破图标栏 */
+  .sidebar.is-collapsed .sidebar-link span {
+    display: none;
+  }
+
+  .sidebar.is-collapsed .sidebar-link {
+    width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    padding: 0;
+    border-radius: 10px;
+  }
+
+  .sidebar.is-collapsed .sidebar-nav {
+    width: 100%;
+    align-items: center;
+  }
+
+  .sidebar.is-collapsed .sidebar-link-icon {
+    width: 20px;
+    height: 20px;
+    opacity: 1;
+  }
 }

@@ -64,7 +64,9 @@ export class AiProviderService {
     });
 
     if (!response.ok) {
-      throw new BadRequestException(`AI 调用失败：${await readResponseText(response)}`);
+      throw new BadRequestException(
+        translateProviderError('AI 调用失败', response.status, await readResponseText(response)),
+      );
     }
 
     const data = (await response.json()) as {
@@ -108,7 +110,9 @@ export class AiProviderService {
     });
 
     if (!response.ok || !response.body) {
-      throw new BadRequestException(`AI 调用失败：${await readResponseText(response)}`);
+      throw new BadRequestException(
+        translateProviderError('AI 调用失败', response.status, await readResponseText(response)),
+      );
     }
 
     const reader = response.body.getReader();
@@ -192,7 +196,13 @@ export class AiProviderService {
     });
 
     if (!response.ok) {
-      throw new BadRequestException(`Embedding 调用失败：${await readResponseText(response)}`);
+      throw new BadRequestException(
+        translateProviderError(
+          'Embedding 调用失败',
+          response.status,
+          await readResponseText(response),
+        ),
+      );
     }
 
     const data = (await response.json()) as {
@@ -236,4 +246,40 @@ async function readResponseText(response: Response): Promise<string> {
   } catch {
     return `${response.status} ${response.statusText}`;
   }
+}
+
+/**
+ * 把供应商返回的错误体翻译成友好文案：能识别的错误给中文提示，
+ * 识别不了的原样透传（含状态码上下文）。
+ */
+export function translateProviderError(prefix: string, status: number, body: string): string {
+  const text = body.trim();
+  const lower = text.toLowerCase();
+
+  if (status === 402 || lower.includes('insufficient balance') || lower.includes('余额不足')) {
+    return `${prefix}：AI 服务商账户余额不足，请前往服务商控制台充值或更换 API Key 后重试`;
+  }
+  if (status === 401 || lower.includes('invalid api key') || lower.includes('unauthorized')) {
+    return `${prefix}：API Key 无效或已失效，请检查 AI 配置`;
+  }
+  if (status === 429 || lower.includes('rate limit')) {
+    return `${prefix}：AI 服务商限流中，请稍后重试`;
+  }
+  if (status === 404) {
+    return `${prefix}：接口地址或模型不存在，请检查 AI 配置中的 Base URL 与模型名`;
+  }
+
+  return `${prefix}：${text || `${status} ${response_statusTextFallback(status)}`}`;
+}
+
+function response_statusTextFallback(status: number): string {
+  const texts: Record<number, string> = {
+    400: '请求参数错误',
+    402: '需要付费',
+    413: '请求内容过长',
+    500: '服务商内部错误',
+    502: '服务商网关错误',
+    503: '服务商暂时不可用',
+  };
+  return texts[status] ?? '请求失败';
 }

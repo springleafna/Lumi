@@ -20,6 +20,8 @@ import UiSelect from '../components/ui/Select.vue'
 import UiTabs from '../components/ui/Tabs.vue'
 import ProviderConfigForm from '../components/settings/ProviderConfigForm.vue'
 import TagManager from '../components/settings/TagManager.vue'
+import SidebarToggle from '../components/ui/SidebarToggle.vue'
+import { useSidebar } from '../composables/useSidebar'
 import SearchInput from '../components/ui/SearchInput.vue'
 import { useAiSettings } from '../composables/useAiSettings'
 import {
@@ -34,6 +36,7 @@ type SettingsTab = 'ai' | 'jobs' | 'tags'
 
 const route = useRoute()
 const router = useRouter()
+const { isSidebarCollapsed } = useSidebar()
 
 const tabs = [
   { value: 'ai', label: 'AI 设置' },
@@ -137,16 +140,17 @@ function formatDate(value?: string | null) {
 
 <template>
   <main class="app-shell">
-    <aside class="sidebar">
-      <section class="sidebar-section">
+    <aside class="sidebar" :class="{ 'is-collapsed': isSidebarCollapsed }">
+      <section class="sidebar-section sidebar-section-brand">
         <div class="sidebar-brand-link">
           <div class="brand-mark">
             <img class="brand-logo" :src="lumiLogo" alt="" />
           </div>
           <span>Lumi</span>
+          <SidebarToggle />
         </div>
       </section>
-      <section class="sidebar-section">
+      <section class="sidebar-section sidebar-section-nav">
         <div class="sidebar-title">导航</div>
         <nav class="sidebar-nav">
           <button class="sidebar-link" type="button" @click="router.push('/documents')">

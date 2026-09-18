@@ -15,6 +15,11 @@
     border-bottom: 1px solid var(--border);
   }
 
+  /* 堆叠布局下侧边栏收起无意义，隐藏切换按钮 */
+  .sidebar-toggle {
+    display: none;
+  }
+
   .main,
   .content {
     overflow: visible;

@@ -54,7 +54,13 @@
 
 .article-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  /* 列最小宽取「容器三分之一」与 340px 的较大值：宽屏锁死最多 3 列
+     （侧栏收起后内容变宽也不会挤出第四列挤压标签，6 篇/页恰好 2 整行），
+     窄屏仍按 340px 自然降为 2/1 列 */
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(340px, calc((100% - 2 * var(--space-4)) / 3)), 1fr)
+  );
   gap: var(--space-4);
 }
 

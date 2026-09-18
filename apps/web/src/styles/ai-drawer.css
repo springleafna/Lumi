@@ -22,6 +22,13 @@
   transform: translateX(0);
 }
 
+/* 侧栏收起时抽屉加宽：AI 回答 / 字幕 / 批注获得更多阅读宽度（≤920px 堆叠布局不生效） */
+@media (min-width: 921px) {
+  .app-shell:has(.sidebar.is-collapsed) .ai-drawer {
+    width: min(585px, 100vw);
+  }
+}
+
 .ai-drawer-header {
   display: flex;
   min-width: 0;

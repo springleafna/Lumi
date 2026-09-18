@@ -24,10 +24,13 @@ import UiEmptyState from '../components/ui/EmptyState.vue'
 import UiInput from '../components/ui/Input.vue'
 import { useMarkdownRenderer } from '../composables/useMarkdownRenderer'
 import { useKnowledgeChat } from '../composables/useKnowledgeChat'
+import { useSidebar } from '../composables/useSidebar'
 import { formatVideoDuration } from '../lib/video-anchor'
+import SidebarToggle from '../components/ui/SidebarToggle.vue'
 import lumiLogo from '../assets/lumi-logo.svg'
 
 const router = useRouter()
+const { isSidebarCollapsed } = useSidebar()
 
 const {
   sessions,
@@ -136,17 +139,18 @@ function formatDate(value?: string | null) {
 
 <template>
   <main class="app-shell">
-    <aside class="sidebar knowledge-sidebar">
-      <section class="sidebar-section">
+    <aside class="sidebar knowledge-sidebar" :class="{ 'is-collapsed': isSidebarCollapsed }">
+      <section class="sidebar-section sidebar-section-brand">
         <div class="sidebar-brand-link">
           <div class="brand-mark">
             <img class="brand-logo" :src="lumiLogo" alt="" />
           </div>
           <span>Lumi</span>
+          <SidebarToggle />
         </div>
       </section>
 
-      <section class="sidebar-section">
+      <section class="sidebar-section sidebar-section-nav">
         <div class="sidebar-title">导航</div>
         <nav class="sidebar-nav">
           <button class="sidebar-link" type="button" @click="router.push('/documents')">

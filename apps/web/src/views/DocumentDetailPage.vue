@@ -34,7 +34,9 @@ import AnnotationLayer from '../components/document-detail/AnnotationLayer.vue'
 import ArticleToc from '../components/document-detail/ArticleToc.vue'
 import TagEditor from '../components/document-detail/TagEditor.vue'
 import VideoHeaderCard from '../components/document-detail/VideoHeaderCard.vue'
+import SidebarToggle from '../components/ui/SidebarToggle.vue'
 import { useToast } from '../composables/useToast'
+import { useSidebar } from '../composables/useSidebar'
 import { useMarkdownRenderer } from '../composables/useMarkdownRenderer'
 import { useRuntimeToc } from '../composables/useRuntimeToc'
 import {
@@ -81,6 +83,7 @@ type CitationRange = {
 const route = useRoute()
 const router = useRouter()
 const { toast } = useToast()
+const { isSidebarCollapsed } = useSidebar()
 
 // Markdown 渲染管线（详情页允许 HTML，需经 DOMPurify 清洗）。
 const { shikiHighlighter, initShiki, render } = useMarkdownRenderer({ html: true })
@@ -844,17 +847,18 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 <template>
   <main class="app-shell">
-    <aside class="sidebar">
-      <section class="sidebar-section">
+    <aside class="sidebar" :class="{ 'is-collapsed': isSidebarCollapsed }">
+      <section class="sidebar-section sidebar-section-brand">
         <div class="sidebar-brand-link">
           <div class="brand-mark">
             <img class="brand-logo" :src="lumiLogo" alt="" />
           </div>
           <span>Lumi</span>
+          <SidebarToggle />
         </div>
       </section>
 
-      <section class="sidebar-section">
+      <section class="sidebar-section sidebar-section-nav">
         <div class="sidebar-title">当前文章</div>
         <nav class="sidebar-nav">
           <button class="sidebar-link" type="button" @click="router.push('/documents')">
