@@ -228,9 +228,16 @@ export type AiCitationDto = {
   score?: number;
 };
 
+export type VideoSummaryMode = 'brief' | 'standard';
+
 export type AiAnalysisDto = {
   id: string;
   status: AiAnalysisStatus;
+  /** 视频总结的生成模式：brief=速览（导入默认），standard=精读；历史记录可能为 null */
+  mode?: VideoSummaryMode | null;
+  /** 视频双模式正文存档情况，供前端区分「切换」（已存档）与「生成」（需调用模型） */
+  hasBriefBody: boolean;
+  hasStandardBody: boolean;
   provider?: string | null;
   model?: string | null;
   language: string;
@@ -268,8 +275,14 @@ export type CreateAiConversationRequest = {
   question: string;
 };
 
+export type RetryAiAnalysisRequest = {
+  mode?: VideoSummaryMode;
+};
+
 export type RetryAiAnalysisResponse = {
   analysis: AiAnalysisDto;
+  /** 视频切换到已保存的另一份正文时为 true（未调用模型，立即生效） */
+  swapped?: boolean;
 };
 
 export type RetryIngestResponse = {

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
-import type { CreateAiConversationRequest, UserDto } from '@lumi/shared';
+import type { CreateAiConversationRequest, RetryAiAnalysisRequest, UserDto } from '@lumi/shared';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AiService } from './ai.service';
@@ -16,8 +16,12 @@ export class AiController {
   }
 
   @Post('ai-analysis/retry')
-  retryAnalysis(@CurrentUser() user: UserDto, @Param('id') id: string) {
-    return this.aiService.retryAnalysis(user.id, id);
+  retryAnalysis(
+    @CurrentUser() user: UserDto,
+    @Param('id') id: string,
+    @Body() body?: RetryAiAnalysisRequest,
+  ) {
+    return this.aiService.retryAnalysis(user.id, id, body?.mode);
   }
 
   @Get('ai-conversations')

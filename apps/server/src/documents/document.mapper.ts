@@ -17,6 +17,7 @@ import type {
   DocumentSummary,
   IngestJobDto,
   TagDto,
+  VideoSummaryMode,
 } from '@lumi/shared';
 
 export type DocumentWithTags = Document & {
@@ -99,6 +100,9 @@ export function toAiAnalysisDto(analysis: AiAnalysis): AiAnalysisDto {
   return {
     id: analysis.id,
     status: analysis.status,
+    mode: (analysis.mode as VideoSummaryMode | null) ?? null,
+    hasBriefBody: analysis.briefMarkdown !== null,
+    hasStandardBody: analysis.standardMarkdown !== null,
     provider: analysis.provider,
     model: analysis.model,
     language: analysis.language,

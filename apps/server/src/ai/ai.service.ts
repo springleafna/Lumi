@@ -1,12 +1,14 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
-import type { CreateAiConversationRequest } from '@lumi/shared';
+import type { CreateAiConversationRequest, VideoSummaryMode } from '@lumi/shared';
 import { AiProviderService } from './ai-provider.service';
 import { buildAnalysisMessages } from './prompts/analysis';
 import { buildDocumentQuestionMessages } from './prompts/document-question';
 import {
   buildVideoMapMessages,
   buildVideoReduceMessages,
+  buildVideoSinglePassMessages,
   type VideoChunkSummary,
 } from './prompts/video-summary';
 import {
@@ -40,12 +42,18 @@ type AnalysisPayload = {
 /** 单文档问答的多轮上下文轮数（取最近 N 条成功回答，来自落库记录） */
 const DOCUMENT_QUESTION_HISTORY_TURNS = 4;
 
+/** 转写字符量不超过该值时单次成文（全文进上下文），超过才走 Map-Reduce 分块 */
+const DEFAULT_SINGLE_PASS_MAX_CHARS = 16_000;
+
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly queueService: QueueService,
     private readonly providerService: AiProviderService,
+    private readonly configService: ConfigService,
   ) {}
 
   async getAnalysis(userId: string, documentId: string) {
@@ -56,7 +64,7 @@ export class AiService {
     return analysis ? toAiAnalysisDto(analysis) : null;
   }
 
-  async retryAnalysis(userId: string, documentId: string) {
+  async retryAnalysis(userId: string, documentId: string, mode?: VideoSummaryMode) {
     const document = await this.ensureOwnedDocument(userId, documentId);
     if (document.ingestStatus !== 'succeeded') {
       throw new BadRequestException('文章解析完成后才能生成 AI 分析');
@@ -64,34 +72,110 @@ export class AiService {
 
     await this.providerService.getChatConfig();
 
-    const analysis = await this.prisma.aiAnalysis.upsert({
+    const targetMode = mode ?? 'brief';
+    const analysis = await this.prisma.aiAnalysis.findUnique({ where: { documentId } });
+
+    // 视频已有成功分析：两种模式的正文分别存档，目标模式已存则直接切换，不调用模型
+    if (document.type === 'video' && analysis?.status === 'succeeded') {
+      const currentMode = (analysis.mode as VideoSummaryMode | null) ?? 'brief';
+      // 兼容存量视频：当前激活正文属于当前模式，存档缺失时先补档，保证之后切换零生成
+      const currentStored =
+        currentMode === 'standard' ? analysis.standardMarkdown : analysis.briefMarkdown;
+      if (!currentStored && document.markdown) {
+        await this.prisma.aiAnalysis.update({
+          where: { documentId },
+          data:
+            currentMode === 'standard'
+              ? { standardMarkdown: document.markdown }
+              : { briefMarkdown: document.markdown },
+        });
+        if (currentMode === 'standard') analysis.standardMarkdown = document.markdown;
+        else analysis.briefMarkdown = document.markdown;
+      }
+      const storedBody =
+        targetMode === 'standard' ? analysis.standardMarkdown : analysis.briefMarkdown;
+      if (storedBody && targetMode !== currentMode) {
+        return {
+          analysis: toAiAnalysisDto(await this.swapVideoBody(documentId, targetMode, storedBody)),
+          swapped: true,
+        };
+      }
+      // 同模式重新生成（替换存档正文）或目标模式正文缺失 → 入队仅正文生成
+      await this.prisma.aiAnalysis.update({
+        where: { documentId },
+        data: {
+          status: 'processing',
+          mode: targetMode,
+          errorMessage: null,
+          startedAt: new Date(),
+        },
+      });
+      await this.queueService.addAiAnalysisJob({ userId, documentId, mode: targetMode });
+      const updated = await this.prisma.aiAnalysis.findUniqueOrThrow({ where: { documentId } });
+      return { analysis: toAiAnalysisDto(updated), swapped: false };
+    }
+
+    const upserted = await this.prisma.aiAnalysis.upsert({
       where: { documentId },
       update: {
         status: 'pending',
         errorMessage: null,
+        mode: document.type === 'video' ? targetMode : null,
       },
       create: {
         userId,
         documentId,
         status: 'pending',
+        mode: document.type === 'video' ? targetMode : null,
       },
     });
 
-    await this.queueService.addAiAnalysisJob({ userId, documentId });
-    return { analysis: toAiAnalysisDto(analysis) };
+    await this.queueService.addAiAnalysisJob({ userId, documentId, mode: targetMode });
+    return { analysis: toAiAnalysisDto(upserted), swapped: false };
   }
 
-  async analyzeDocument(userId: string, documentId: string) {
+  /** 在已存档的两份视频正文间切换：只换激活正文与模式标记，不调用模型 */
+  private async swapVideoBody(
+    documentId: string,
+    targetMode: VideoSummaryMode,
+    storedBody: string,
+  ) {
+    const [, analysis] = await this.prisma.$transaction([
+      this.prisma.document.update({
+        where: { id: documentId },
+        data: { markdown: storedBody, wordCount: countTextWords(storedBody) },
+      }),
+      this.prisma.aiAnalysis.update({
+        where: { documentId },
+        data: { mode: targetMode, errorMessage: null },
+      }),
+    ]);
+    return analysis;
+  }
+
+  async analyzeDocument(userId: string, documentId: string, mode: VideoSummaryMode = 'brief') {
     const document = await this.ensureOwnedDocument(userId, documentId);
     if (document.ingestStatus !== 'succeeded') {
       throw new BadRequestException('文章尚未解析完成');
     }
 
     const provider = await this.providerService.getChatConfig();
+    // 视频重新生成（已有成功分析）只重写正文：阅读卡字段与标签保持首次分析结果
+    const existingAnalysis =
+      document.type === 'video'
+        ? await this.prisma.aiAnalysis.findUnique({
+            where: { documentId },
+            select: { status: true, mode: true },
+          })
+        : null;
+    const isVideoRegen = existingAnalysis?.status === 'succeeded';
+    // 记住本次生成前的模式：正文重新生成失败时需要回退，避免模式标记与正文不一致
+    const previousVideoMode = (existingAnalysis?.mode as VideoSummaryMode | null) ?? 'brief';
     await this.prisma.aiAnalysis.upsert({
       where: { documentId },
       update: {
         status: 'processing',
+        ...(document.type === 'video' ? { mode } : {}),
         provider: provider.providerPreset,
         model: provider.model,
         errorMessage: null,
@@ -101,6 +185,7 @@ export class AiService {
         userId,
         documentId,
         status: 'processing',
+        ...(document.type === 'video' ? { mode } : {}),
         provider: provider.providerPreset,
         model: provider.model,
         startedAt: new Date(),
@@ -108,11 +193,11 @@ export class AiService {
     });
 
     try {
-      const existingTags = await this.getExistingTagCandidates(userId);
+      const existingTags = isVideoRegen ? [] : await this.getExistingTagCandidates(userId);
       let payload: AnalysisPayload;
       let markdown: string | null = null;
       if (document.type === 'video') {
-        const video = await this.summarizeVideoDocument(document, existingTags);
+        const video = await this.summarizeVideoDocument(document, existingTags, mode, isVideoRegen);
         payload = video.payload;
         markdown = video.markdown;
       } else {
@@ -128,18 +213,19 @@ export class AiService {
         );
         payload = normalizeAnalysisPayload(content);
       }
-      const tags = normalizeTags(payload.tags);
+      // 重新生成不重算标签：正文之外的字段保持首次分析结果
+      const tags = isVideoRegen ? [] : normalizeTags(payload.tags);
 
       const analysis = await this.prisma.$transaction(async (tx) => {
         // 视频总结的正文在这里才落库（ingest 阶段 markdown 为空）；
-        // 一句话摘要同时回写 excerpt，供列表卡片展示
+        // 首次生成时一句话摘要同时回写 excerpt，供列表卡片展示
         if (markdown !== null) {
           await tx.document.update({
             where: { id: documentId },
             data: {
               markdown,
               wordCount: countTextWords(markdown),
-              excerpt: payload.oneSentenceSummary || null,
+              ...(isVideoRegen ? {} : { excerpt: payload.oneSentenceSummary || null }),
             },
           });
         }
@@ -147,41 +233,66 @@ export class AiService {
           where: { documentId },
           data: {
             status: 'succeeded',
+            ...(document.type === 'video' ? { mode } : {}),
+            // 双模式正文按模式存档，供切换时免生成直接换回
+            ...(markdown !== null && mode === 'standard'
+              ? { standardMarkdown: markdown }
+              : {}),
+            ...(markdown !== null && mode !== 'standard' ? { briefMarkdown: markdown } : {}),
             provider: provider.providerPreset,
             model: provider.model,
             language: 'zh-CN',
-            oneSentenceSummary: payload.oneSentenceSummary || null,
-            summary: payload.summary || null,
-            keyPoints: normalizeStringArray(payload.keyPoints),
-            concepts: normalizeStringArray(payload.concepts),
-            actions: normalizeStringArray(payload.actions),
-            audience: payload.audience || null,
-            suggestedTags: tags,
+            ...(isVideoRegen
+              ? {}
+              : {
+                  oneSentenceSummary: payload.oneSentenceSummary || null,
+                  summary: payload.summary || null,
+                  keyPoints: normalizeStringArray(payload.keyPoints),
+                  concepts: normalizeStringArray(payload.concepts),
+                  actions: normalizeStringArray(payload.actions),
+                  audience: payload.audience || null,
+                  suggestedTags: tags,
+                }),
             errorMessage: null,
             finishedAt: new Date(),
           },
         });
       });
 
-      await this.attachTags(userId, documentId, tags);
+      if (!isVideoRegen) {
+        await this.attachTags(userId, documentId, tags);
+      }
       return toAiAnalysisDto(analysis);
     } catch (error) {
       const message = getErrorMessage(error);
-      await this.prisma.aiAnalysis.upsert({
-        where: { documentId },
-        update: {
-          status: 'failed',
-          errorMessage: message,
-          finishedAt: new Date(),
-        },
-        create: {
-          userId,
-          documentId,
-          status: 'failed',
-          errorMessage: message,
-          finishedAt: new Date(),
-        },
-      });
+      if (isVideoRegen) {
+        // 正文重新生成失败不影响已成功的阅读卡：回退模式标记并保留原内容，错误由模式条提示
+        await this.prisma.aiAnalysis.update({
+          where: { documentId },
+          data: {
+            status: 'succeeded',
+            mode: previousVideoMode,
+            errorMessage: message,
+            finishedAt: new Date(),
+          },
+        });
+      } else {
+        await this.prisma.aiAnalysis.upsert({
+          where: { documentId },
+          update: {
+            status: 'failed',
+            errorMessage: message,
+            finishedAt: new Date(),
+          },
+          create: {
+            userId,
+            documentId,
+            status: 'failed',
+            errorMessage: message,
+            finishedAt: new Date(),
+          },
+        });
+      }
       throw error;
     }
   }
@@ -317,8 +428,9 @@ export class AiService {
   }
 
   /**
-   * 视频总结：Map（按时间窗分块小结）→ Reduce（结构化 Markdown + 阅读卡）。
-   * 锚点经 normalizeAnchors 校验吸附，编造的时间点会被移除。
+   * 视频总结：转写字符量在阈值内时整篇进上下文单次成文（无分块信息损耗），
+   * 超限才走 Map（按时间窗分块小结）→ Reduce（结构化 Markdown + 阅读卡）；
+   * 单次失败回退 Map-Reduce。锚点经 normalizeAnchors 校验吸附，编造的时间点会被移除。
    */
   private async summarizeVideoDocument(
     document: {
@@ -328,6 +440,8 @@ export class AiService {
       videoDurationSeconds: number | null;
     },
     existingTags: string[],
+    mode: VideoSummaryMode,
+    bodyOnly = false,
   ): Promise<{ payload: AnalysisPayload; markdown: string }> {
     const transcript = await this.prisma.videoTranscript.findUnique({
       where: { documentId: document.id },
@@ -335,6 +449,17 @@ export class AiService {
     const segments = (transcript?.segments as TranscriptSegment[] | null) ?? [];
     if (!segments.length) {
       throw new BadRequestException('该视频没有可用字幕记录，无法生成总结');
+    }
+
+    const totalChars = segments.reduce((sum, segment) => sum + segment.text.length, 0);
+    if (totalChars <= this.getSinglePassMaxChars()) {
+      try {
+        return await this.summarizeInSinglePass(document, existingTags, segments, mode, bodyOnly);
+      } catch (error) {
+        this.logger.warn(
+          `视频单次总结失败，回退 Map-Reduce ${document.id}: ${getErrorMessage(error)}`,
+        );
+      }
     }
 
     const chunks = chunkTranscriptByWindow(segments);
@@ -369,19 +494,68 @@ export class AiService {
           title: document.title,
           uploader: document.author,
           durationSeconds: document.videoDurationSeconds,
+          mode,
           chunkSummaries,
           existingTags,
+          bodyOnly,
         }),
       ),
     );
+    const markdown = this.normalizeVideoAnchors(payload, segments);
+    return { payload, markdown };
+  }
+
+  /**
+   * 单次总结：完整字幕一次成文，锚点直接取自带时间头的字幕行。
+   * 任何失败（JSON 解析、模型输出为空、上下文超限）由调用方回退 Map-Reduce。
+   */
+  private async summarizeInSinglePass(
+    document: {
+      id: string;
+      title: string;
+      author: string | null;
+      videoDurationSeconds: number | null;
+    },
+    existingTags: string[],
+    segments: TranscriptSegment[],
+    mode: VideoSummaryMode,
+    bodyOnly = false,
+  ): Promise<{ payload: AnalysisPayload; markdown: string }> {
+    const payload = normalizeAnalysisPayload(
+      await this.providerService.chatJson(
+        buildVideoSinglePassMessages({
+          title: document.title,
+          uploader: document.author,
+          durationSeconds: document.videoDurationSeconds,
+          mode,
+          transcriptText: formatTranscriptForPrompt(segments),
+          existingTags,
+          bodyOnly,
+        }),
+      ),
+    );
+    const markdown = this.normalizeVideoAnchors(payload, segments);
+    return { payload, markdown };
+  }
+
+  /**
+   * 锚点校验：正文与阅读卡要点中的 [mm:ss] 吸附到真实字幕时间，
+   * 匹配不到的移除，保证抽屉与章节目录的跳转可信。
+   */
+  private normalizeVideoAnchors(payload: AnalysisPayload, segments: TranscriptSegment[]): string {
     const markdown = normalizeAnchors(payload.markdown ?? '', segments);
     if (!markdown) {
-      throw new BadRequestException('总结生成结果为空，请重试');
+      throw new Error('总结生成结果为空，请重试');
     }
-
-    // 阅读卡要点中的锚点与正文同规则校验（吸附/移除），保证抽屉跳转可信
     payload.keyPoints = (payload.keyPoints ?? []).map((point) => normalizeAnchors(point, segments));
-    return { payload, markdown };
+    return markdown;
+  }
+
+  private getSinglePassMaxChars(): number {
+    const configured = Number(this.configService.get<string>('VIDEO_SINGLE_PASS_MAX_CHARS'));
+    return Number.isFinite(configured) && configured > 0
+      ? configured
+      : DEFAULT_SINGLE_PASS_MAX_CHARS;
   }
 
   /**

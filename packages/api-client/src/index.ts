@@ -33,6 +33,7 @@ import type {
   MergeTagResult,
   PageResult,
   RegisterRequest,
+  RetryAiAnalysisRequest,
   RetryAiAnalysisResponse,
   RetryEmbeddingJobResponse,
   RetryIngestResponse,
@@ -246,8 +247,8 @@ export function createLumiClient(options: LumiClientOptions) {
         request<RetryIngestResponse>(http, 'post', `/documents/${id}/retry-ingest`),
       getAiAnalysis: (id: string) =>
         request<AiAnalysisDto | null>(http, 'get', `/documents/${id}/ai-analysis`),
-      retryAiAnalysis: (id: string) =>
-        request<RetryAiAnalysisResponse>(http, 'post', `/documents/${id}/ai-analysis/retry`),
+        retryAiAnalysis: (id: string, body?: RetryAiAnalysisRequest) =>
+          request<RetryAiAnalysisResponse>(http, 'post', `/documents/${id}/ai-analysis/retry`, body),
       listAiConversations: (id: string) =>
         request<AiConversationDto[]>(http, 'get', `/documents/${id}/ai-conversations`),
       streamAiConversation: (

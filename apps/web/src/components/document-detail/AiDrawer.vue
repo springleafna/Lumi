@@ -134,6 +134,17 @@ watch([() => props.open, () => props.tab], async ([open, tab]) => {
   }
 })
 
+// 视频正文重新生成期间（processing）卡片字段未变，保持展示避免"内容被重生成"的错觉
+const analysisCard = computed(() => {
+  const analysis = props.aiAnalysis
+  if (!analysis) return null
+  if (analysis.status === 'succeeded') return analysis
+  return analysis.status === 'processing' &&
+    (analysis.oneSentenceSummary || analysis.keyPoints?.length)
+    ? analysis
+    : null
+})
+
 function aiList(items?: string[] | null) {
   return items?.filter(Boolean) || []
 }
@@ -177,7 +188,13 @@ function aiList(items?: string[] | null) {
           v-else-if="aiAnalysis?.status === 'pending' || aiAnalysis?.status === 'processing'"
           class="ai-muted"
         >
-          AI 正在生成结构化阅读卡片。
+          {{
+            isVideo && analysisCard
+              ? '正在重新生成正文，阅读卡保持不变。'
+              : isVideo
+                ? 'AI 正在生成视频总结。'
+                : 'AI 正在生成结构化阅读卡片。'
+          }}
         </p>
         <p v-else-if="aiAnalysis?.status === 'failed'" class="ai-muted">
           {{ aiAnalysis.errorMessage || 'AI 生成失败，可以稍后重试。' }}
@@ -196,17 +213,17 @@ function aiList(items?: string[] | null) {
         </UiButton>
       </section>
 
-      <section v-if="aiAnalysis?.status === 'succeeded'" class="ai-section">
+      <section v-if="analysisCard" class="ai-section">
         <h3>摘要</h3>
-        <p v-if="aiAnalysis.oneSentenceSummary" class="ai-summary-lead">
-          {{ aiAnalysis.oneSentenceSummary }}
+        <p v-if="analysisCard.oneSentenceSummary" class="ai-summary-lead">
+          {{ analysisCard.oneSentenceSummary }}
         </p>
-        <p v-if="aiAnalysis.summary" class="ai-muted">{{ aiAnalysis.summary }}</p>
+        <p v-if="analysisCard.summary" class="ai-muted">{{ analysisCard.summary }}</p>
 
-        <div v-if="aiList(aiAnalysis.keyPoints).length" class="ai-list-block">
+        <div v-if="aiList(analysisCard.keyPoints).length" class="ai-list-block">
           <h4>{{ isVideo ? '精华看点' : '关键要点' }}</h4>
           <ul>
-            <li v-for="item in aiList(aiAnalysis.keyPoints)" :key="item">
+            <li v-for="item in aiList(analysisCard.keyPoints)" :key="item">
               <template v-if="isVideo">
                 <template v-for="(part, index) in splitVideoAnchors(item)" :key="index">
                   <button
@@ -226,25 +243,25 @@ function aiList(items?: string[] | null) {
           </ul>
         </div>
 
-        <div v-if="aiList(aiAnalysis.concepts).length" class="ai-list-block">
+        <div v-if="aiList(analysisCard.concepts).length" class="ai-list-block">
           <h4>{{ isVideo ? '提到的工具与概念' : '核心概念' }}</h4>
           <div class="article-detail-tags">
-            <UiBadge v-for="item in aiList(aiAnalysis.concepts)" :key="item" variant="neutral">
+            <UiBadge v-for="item in aiList(analysisCard.concepts)" :key="item" variant="neutral">
               {{ item }}
             </UiBadge>
           </div>
         </div>
 
-        <div v-if="!isVideo && aiList(aiAnalysis.actions).length" class="ai-list-block">
+        <div v-if="!isVideo && aiList(analysisCard.actions).length" class="ai-list-block">
           <h4>行动项</h4>
           <ul>
-            <li v-for="item in aiList(aiAnalysis.actions)" :key="item">{{ item }}</li>
+            <li v-for="item in aiList(analysisCard.actions)" :key="item">{{ item }}</li>
           </ul>
         </div>
 
-        <div v-if="!isVideo && aiAnalysis.audience" class="ai-list-block">
+        <div v-if="!isVideo && analysisCard.audience" class="ai-list-block">
           <h4>适合人群</h4>
-          <p class="ai-muted">{{ aiAnalysis.audience }}</p>
+          <p class="ai-muted">{{ analysisCard.audience }}</p>
         </div>
       </section>
 

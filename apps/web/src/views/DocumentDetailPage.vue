@@ -22,6 +22,7 @@ import type {
   AnnotationDto,
   DocumentDetail,
   DocumentType,
+  VideoSummaryMode,
   VideoTranscriptDto,
 } from '@lumi/shared'
 import UiBadge from '../components/ui/Badge.vue'
@@ -34,6 +35,7 @@ import AnnotationLayer from '../components/document-detail/AnnotationLayer.vue'
 import ArticleToc from '../components/document-detail/ArticleToc.vue'
 import TagEditor from '../components/document-detail/TagEditor.vue'
 import VideoHeaderCard from '../components/document-detail/VideoHeaderCard.vue'
+import VideoSummaryModeBar from '../components/document-detail/VideoSummaryModeBar.vue'
 import SidebarToggle from '../components/ui/SidebarToggle.vue'
 import { useToast } from '../composables/useToast'
 import { useSidebar } from '../composables/useSidebar'
@@ -473,17 +475,26 @@ async function retryIngest() {
   }, '重新解析失败')
 }
 
-async function retryAiAnalysis() {
+async function retryAiAnalysis(mode?: VideoSummaryMode) {
   if (!document.value) return
   aiActionLoading.value = true
   try {
-    const result = await client.documents.retryAiAnalysis(document.value.id)
+    const result = await client.documents.retryAiAnalysis(
+      document.value.id,
+      mode ? { mode } : undefined,
+    )
     document.value = {
       ...document.value,
       aiAnalysis: result.analysis,
       aiAnalysisStatus: result.analysis.status,
     }
-    toast({ title: '已加入 AI 生成队列', variant: 'success' })
+    if (result.swapped) {
+      // 切换立即生效：静默刷新拿到存档正文
+      await loadDocument({ silent: true })
+      toast({ title: mode === 'standard' ? '已切换到精读笔记' : '已切换到速览总结', variant: 'success' })
+    } else {
+      toast({ title: mode === 'standard' ? '已加入精读生成队列' : '已加入 AI 生成队列', variant: 'success' })
+    }
   } catch (error) {
     notifyError(error, 'AI 生成失败')
   } finally {
@@ -1088,6 +1099,14 @@ function getErrorMessage(error: unknown, fallback: string) {
               :cover-image="document.coverImage"
               :duration-seconds="document.videoDurationSeconds"
               :source="document.source"
+            />
+
+            <VideoSummaryModeBar
+              v-if="isVideoDocument && isIngestSucceeded"
+              :ai-analysis="aiAnalysis"
+              :ai-status="document.aiAnalysisStatus"
+              :action-loading="aiActionLoading"
+              @regenerate="retryAiAnalysis"
             />
 
             <UiEmptyState

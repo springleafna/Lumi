@@ -46,6 +46,10 @@ export class AiAnalysisProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private async process(job: Job<AiAnalysisQueueJobData>) {
-    await this.aiService.analyzeDocument(job.data.userId, job.data.documentId);
+    await this.aiService.analyzeDocument(
+      job.data.userId,
+      job.data.documentId,
+      job.data.mode,
+    );
   }
 }
