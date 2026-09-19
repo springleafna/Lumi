@@ -248,7 +248,8 @@ export class EmbeddingsService {
         : {}),
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    // 列表 + 计数无原子性要求，Promise.all 并行（同 documents.list 的说明）
+    const [items, total] = await Promise.all([
       this.prisma.documentEmbeddingJob.findMany({
         where,
         include: {
@@ -533,7 +534,8 @@ export class EmbeddingsService {
         input.userId,
       );
       }
-    });
+      // 分片数随文档长度线性增长，逐条 INSERT 在高延迟数据库链路下易超默认 5s
+    }, { timeout: 30_000 });
   }
 }
 

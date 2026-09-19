@@ -63,7 +63,9 @@ export class DocumentsService {
     const pageSize = Math.min(100, Math.max(1, params.pageSize || 20));
     const where = this.buildListWhere(userId, params);
 
-    const [items, total] = await this.prisma.$transaction([
+    // 列表 + 计数不具原子性要求，用 Promise.all 并行即可；
+    // 包事务在高延迟数据库链路（如本地连远程库）下会撞 5s 事务超时
+    const [items, total] = await Promise.all([
       this.prisma.document.findMany({
         where,
         include: documentInclude,
@@ -83,7 +85,8 @@ export class DocumentsService {
   }
 
   async facets(userId: string): Promise<DocumentFacets> {
-    const [tags, sources] = await this.prisma.$transaction([
+    // 两组独立聚合，无原子性要求（见 list 的说明）
+    const [tags, sources] = await Promise.all([
       this.prisma.tag.findMany({
         where: { userId },
         include: {

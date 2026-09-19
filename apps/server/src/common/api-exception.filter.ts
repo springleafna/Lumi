@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { isTransactionTimeout, TRANSACTION_TIMEOUT_MESSAGE } from './error.utils';
 
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
@@ -54,6 +55,9 @@ function getErrorCode(status: number, response: unknown): string {
 }
 
 function getErrorMessage(exception: unknown, response: unknown): string {
+  if (isTransactionTimeout(exception)) {
+    return TRANSACTION_TIMEOUT_MESSAGE;
+  }
   if (isObjectResponse(response)) {
     const message = response.message;
     if (Array.isArray(message)) return message.join('；');
