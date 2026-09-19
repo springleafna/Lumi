@@ -37,6 +37,9 @@ type AnalysisPayload = {
   markdown?: string;
 };
 
+/** 单文档问答的多轮上下文轮数（取最近 N 条成功回答，来自落库记录） */
+const DOCUMENT_QUESTION_HISTORY_TURNS = 4;
+
 @Injectable()
 export class AiService {
   constructor(
@@ -246,12 +249,28 @@ export class AiService {
             .join('\n\n');
         }
       }
+      // 多轮上下文来自落库记录：取最近几轮成功问答（不含本轮），时间正序进 prompt
+      const historyRows = await this.prisma.aiConversation.findMany({
+        where: {
+          userId,
+          documentId,
+          status: 'succeeded',
+          answer: { not: null },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: DOCUMENT_QUESTION_HISTORY_TURNS,
+        select: { question: true, answer: true },
+      });
+      const history = historyRows
+        .reverse()
+        .map((row) => ({ question: row.question, answer: row.answer ?? '' }));
       for await (const chunk of this.providerService.streamChat(
         buildDocumentQuestionMessages({
           title: document.title,
           question,
           articleText,
           analysisSummary: analysis?.summary || analysis?.oneSentenceSummary || undefined,
+          history,
         }),
       )) {
         answer += chunk;
